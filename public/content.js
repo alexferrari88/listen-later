@@ -1,10 +1,6 @@
-export default defineContentScript({
-	matches: [],
-	main() {
-		console.log("Content script loaded");
-		extractContent();
-	},
-});
+// This content script is injected programmatically by the background script
+console.log("Content script loaded");
+extractContent();
 
 async function extractContent() {
 	try {
@@ -12,10 +8,10 @@ async function extractContent() {
 		await loadReadability();
 
 		// Create a copy of the document for Readability
-		const documentClone = document.cloneNode(true) as Document;
+		const documentClone = document.cloneNode(true);
 
 		// Create Readability instance
-		const reader = new (window as any).Readability(documentClone, {
+		const reader = new window.Readability(documentClone, {
 			debug: false,
 			charThreshold: 500,
 		});
@@ -55,10 +51,10 @@ async function extractContent() {
 	}
 }
 
-function loadReadability(): Promise<void> {
+function loadReadability() {
 	return new Promise((resolve, reject) => {
 		// Check if Readability is already loaded
-		if ((window as any).Readability) {
+		if (window.Readability) {
 			resolve();
 			return;
 		}
@@ -67,7 +63,7 @@ function loadReadability(): Promise<void> {
 		const script = document.createElement("script");
 		script.src = chrome.runtime.getURL("lib/readability.js");
 		script.onload = () => {
-			if ((window as any).Readability) {
+			if (window.Readability) {
 				resolve();
 			} else {
 				reject(new Error("Readability.js failed to load properly"));
