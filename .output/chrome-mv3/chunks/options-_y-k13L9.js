@@ -1,0 +1,1 @@
+import{j as t,R as e}from"./client-ChLcd8br.js";const o=()=>t.jsxs("div",{children:[t.jsx("h1",{children:"Listen Later - Options"}),t.jsx("p",{children:"Options component placeholder"})]}),n=e.createRoot(document.getElementById("root"));n.render(t.jsx(o,{}));
