@@ -37,29 +37,44 @@ This plan is structured to build the extension from the inside out, starting wit
 - Storage layer is implemented with TypeScript interfaces and helper functions
 - Development environment is ready for Phase 2 implementation
 
-#### **Phase 2: Core Backend Logic (Background Script)**
+#### **Phase 2: Core Backend Logic (Background Script)** ✅ **COMPLETED**
 
 **Goal:** Implement the primary business logic of the extension within the background service worker.
 
-* **Task 2.1: Implement Initial State and Message Listener**
+* **Task 2.1: Implement Initial State and Message Listener** ✅
   * **Action:** In `background.ts`, set up the main listener for `chrome.runtime.onMessage`. It should initially handle a `START_TTS` message type.
   * **Spec Reference:** Section 5.B (Detailed Logic Flow).
+  * **Status:** Completed - Message listener implemented with support for START_TTS, CONTENT_EXTRACTED, and CONTENT_ERROR messages.
 
-* **Task 2.2: Implement Content Script Injection and State Update**
+* **Task 2.2: Implement Content Script Injection and State Update** ✅
   * **Action:** Upon receiving `START_TTS`, the background script should immediately update the state in storage to `{ status: 'processing' }` using the storage wrapper. Then, use `chrome.scripting.executeScript` to inject `content.ts` into the active tab.
   * **Spec Reference:** Section 5.B.6.
+  * **Status:** Completed - Background script updates state and injects content script into active tab.
 
-* **Task 2.3: Implement Content Script Logic**
+* **Task 2.3: Implement Content Script Logic** ✅
   * **Action:** In `content.ts`, import `Readability.js`. Instantiate a new `Readability` object with the page's DOM. Send the result (either `{ type: 'CONTENT_EXTRACTED', text: ... }` or `{ type: 'CONTENT_ERROR', error: ... }`) back to the background script via `chrome.runtime.sendMessage`.
   * **Spec Reference:** Section 5.B.7.
+  * **Status:** Completed - Content script dynamically loads Readability.js, extracts readable content, and sends results to background script.
 
-* **Task 2.4: Implement Gemini API Call Logic**
+* **Task 2.4: Implement Gemini API Call Logic** ✅
   * **Action:** In `background.ts`, upon receiving the `CONTENT_EXTRACTED` message, create a function that retrieves the user's settings (API key, model, voice) from storage. This function will then make a `fetch` request to the Gemini API endpoint.
   * **Spec Reference:** Section 5.B.9.
+  * **Implementation Reference:** See `gemini_doc.md` for TTS API usage examples, including single-speaker and multi-speaker configurations, and proper request structure with `responseModalities: ['AUDIO']` and `speechConfig`.
+  * **Status:** Completed - Gemini API integration implemented with proper TTS configuration using responseModalities and speechConfig.
 
-* **Task 2.5: Implement MP3 Download Handler**
+* **Task 2.5: Implement MP3 Download Handler** ✅
   * **Action:** On a successful Gemini API response, decode the audio data, create a `Blob`, generate an object URL, and trigger the download using the `chrome.downloads.download()` API.
   * **Spec Reference:** Section 5.B.9.
+  * **Implementation Reference:** See `gemini_doc.md` for audio data handling examples, including how to decode base64 audio data from `response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data`.
+  * **Status:** Completed - Audio download handler implemented with base64 decoding, blob creation, and Chrome downloads API.
+
+**Completion Notes:**
+- Complete message-based communication system between background and content scripts
+- Readability.js integration for content extraction with proper error handling
+- Gemini 2.5 TTS API integration with configurable voice and model selection
+- Audio file download functionality with timestamped filenames
+- Comprehensive error handling and state management throughout the pipeline
+- All backend logic is functional and ready for frontend integration in Phase 3
 
 #### **Phase 3: Frontend User Interface (Options & Popup)**
 
@@ -68,6 +83,7 @@ This plan is structured to build the extension from the inside out, starting wit
 * **Task 3.1: Build the Options Page UI**
   * **Action:** Create the `Options.tsx` component. It should render a form with input fields for the API Key, Model Name, and Voice, along with a "Save" button.
   * **Spec Reference:** Section 4 (File Structure) and Section 5.A.
+  * **Implementation Reference:** See `gemini_doc.md` for the complete list of 30 available voice options (Zephyr, Puck, Charon, Kore, etc.) and supported models (Gemini 2.5 Flash Preview TTS, Gemini 2.5 Pro Preview TTS).
 
 * **Task 3.2: Implement Options Page Logic**
   * **Action:** Add state management (`useState`) to the `Options.tsx` component. The "Save" button's `onClick` handler will use the storage wrappers from `lib/storage.ts` to persist the settings. It should also load existing settings when the component mounts.
