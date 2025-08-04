@@ -23,12 +23,12 @@ cd listen-later
 
 2. Install dependencies:
 ```bash
-npm install
+pnpm install
 ```
 
 3. Build the extension:
 ```bash
-npm run build
+pnpm build
 ```
 
 4. Load the extension in Chrome:
@@ -59,19 +59,19 @@ npm run build
 ### Prerequisites
 
 - Node.js (v18+ recommended)
-- npm
+- pnpm
 - Chrome or Chromium browser
 
 ### Available Scripts
 
-- `npm run dev` - Start development server for Chrome
-- `npm run dev:firefox` - Start development server for Firefox
-- `npm run build` - Build production version
-- `npm run build:firefox` - Build for Firefox
-- `npm run test` - Run unit tests
-- `npm run test:ui` - Run tests with UI
-- `npm run e2e` - Run end-to-end tests
-- `npm run zip` - Create distribution ZIP file
+- `pnpm dev` - Start development server for Chrome
+- `pnpm dev:firefox` - Start development server for Firefox
+- `pnpm build` - Build production version
+- `pnpm build:firefox` - Build for Firefox
+- `pnpm test` - Run unit tests
+- `pnpm test:ui` - Run tests with UI
+- `pnpm e2e` - Run end-to-end tests
+- `pnpm zip` - Create distribution ZIP file
 
 ### Technology Stack
 
@@ -110,7 +110,7 @@ The extension follows a background-first architecture:
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature-name`
 3. Make your changes and add tests
-4. Run the test suite: `npm run test && npm run e2e`
+4. Run the test suite: `pnpm test && pnpm e2e`
 5. Commit your changes: `git commit -m 'Add feature'`
 6. Push to the branch: `git push origin feature-name`
 7. Submit a pull request

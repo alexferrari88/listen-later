@@ -7,7 +7,7 @@ This plan is structured to build the extension from the inside out, starting wit
 **Goal:** Initialize the project, install all dependencies, configure the development environment, and create the core file structure.
 
 * **Task 1.1: Initialize WXT Project** ✅
-  * **Action:** Run `npm create wxt@latest` to generate the project skeleton with TypeScript and React.
+  * **Action:** Run `pnpm create wxt@latest` to generate the project skeleton with TypeScript and React.
   * **Spec Reference:** Section 2 (Technology Stack).
   * **Status:** Completed - WXT project initialized with React and TypeScript support.
 

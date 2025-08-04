@@ -9,18 +9,18 @@ Listen Later is a Chrome extension that converts web articles to speech using Go
 ## Development Commands
 
 ### Core Development
-- `npm run dev` - Start development server for Chrome (auto-reloads extension)
-- `npm run dev:firefox` - Start development server for Firefox
-- `npm run build` - Build production version for Chrome
-- `npm run build:firefox` - Build production version for Firefox
+- `pnpm dev` - Start development server for Chrome (auto-reloads extension)
+- `pnpm dev:firefox` - Start development server for Firefox
+- `pnpm build` - Build production version for Chrome
+- `pnpm build:firefox` - Build production version for Firefox
 
 ### Testing & Quality
-- `npm run test` - Run unit tests with Vitest
-- `npm run test:ui` - Run tests with Vitest UI
-- `npm run test:run` - Run tests once without watch mode
-- `npm run e2e` - Run Playwright end-to-end tests
-- `npm run e2e:headed` - Run E2E tests with browser UI
-- `npm run e2e:debug` - Run E2E tests in debug mode
+- `pnpm test` - Run unit tests with Vitest
+- `pnpm test:ui` - Run tests with Vitest UI
+- `pnpm test:run` - Run tests once without watch mode
+- `pnpm e2e` - Run Playwright end-to-end tests
+- `pnpm e2e:headed` - Run E2E tests with browser UI
+- `pnpm e2e:debug` - Run E2E tests in debug mode
 
 ### Code Quality
 - Use Biome for linting and formatting (configured with tabs, double quotes)
@@ -28,8 +28,8 @@ Listen Later is a Chrome extension that converts web articles to speech using Go
 - E2E tests require single worker mode due to extension testing constraints
 
 ### Distribution
-- `npm run zip` - Create distribution ZIP for Chrome Web Store
-- `npm run zip:firefox` - Create distribution ZIP for Firefox Add-ons
+- `pnpm zip` - Create distribution ZIP for Chrome Web Store
+- `pnpm zip:firefox` - Create distribution ZIP for Firefox Add-ons
 
 ## Architecture
 
@@ -118,6 +118,6 @@ interface ExtensionOptions {
 ## Development Notes
 
 - WXT handles manifest generation and build process
-- Extension auto-reloads during development with `npm run dev`
+- Extension auto-reloads during development with `pnpm dev`
 - Background script runs as service worker (Manifest V3)
 - State persistence allows users to close/reopen popup without losing progress
