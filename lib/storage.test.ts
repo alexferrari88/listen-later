@@ -129,7 +129,7 @@ describe("Storage Functions", () => {
 			expect(options).toEqual(storedOptions);
 		});
 
-		it("should store extension options", async () => {
+		it("should store extension options with encrypted API key", async () => {
 			const options: ExtensionOptions = {
 				apiKey: "my-api-key",
 				modelName: "gemini-2.5-pro-preview-tts",
@@ -138,9 +138,40 @@ describe("Storage Functions", () => {
 
 			await setExtensionOptions(options);
 
-			expect(mockStorage.set).toHaveBeenCalledWith({
-				extensionOptions: options,
-			});
+			// Verify storage was called
+			expect(mockStorage.set).toHaveBeenCalledTimes(1);
+			
+			// Get the actual call arguments
+			const callArgs = mockStorage.set.mock.calls[0][0];
+			const storedOptions = callArgs.extensionOptions;
+			
+			// API key should be encrypted (different from original)
+			expect(storedOptions.apiKey).not.toBe(options.apiKey);
+			expect(storedOptions.apiKey).toBeTruthy();
+			
+			// Other fields should remain unchanged
+			expect(storedOptions.modelName).toBe(options.modelName);
+			expect(storedOptions.voice).toBe(options.voice);
+		});
+
+		it("should encrypt and decrypt API key correctly", async () => {
+			const originalOptions: ExtensionOptions = {
+				apiKey: "test-api-key-12345",
+				modelName: "gemini-2.5-flash-preview-tts",
+				voice: "Kore",
+			};
+
+			// Store the options (this encrypts the API key)
+			await setExtensionOptions(originalOptions);
+
+			// Retrieve the options (this should decrypt the API key)
+			const retrievedOptions = await getExtensionOptions();
+
+			// The retrieved options should match the original
+			expect(retrievedOptions).toEqual(originalOptions);
+			
+			// Clean up by clearing the stored data to prevent interference with other tests
+			delete mockStorageData.extensionOptions;
 		});
 
 		it("should return default options with correct values", async () => {

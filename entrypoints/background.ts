@@ -1,4 +1,4 @@
-import { getExtensionOptions, setExtensionState } from "../lib/storage";
+import { getExtensionOptions, setExtensionState, sanitizeErrorMessage } from "../lib/storage";
 
 export default defineBackground(() => {
 	console.log("Background script initialized");
@@ -32,13 +32,14 @@ async function handleMessage(
 		}
 	} catch (error) {
 		console.error("Error handling message:", error);
+		const sanitizedMessage = sanitizeErrorMessage(error);
 		await setExtensionState({
 			status: "error",
-			message: `Background script error: ${error instanceof Error ? error.message : "Unknown error"}`,
+			message: sanitizedMessage,
 		});
 		sendResponse({
 			success: false,
-			error: error instanceof Error ? error.message : "Unknown error",
+			error: sanitizedMessage,
 		});
 	}
 }
@@ -93,11 +94,12 @@ async function handleContentError(
 	error: string,
 	sendResponse: (response?: any) => void,
 ) {
+	const sanitizedMessage = sanitizeErrorMessage(new Error(error));
 	await setExtensionState({
 		status: "error",
-		message: `Content extraction failed: ${error}`,
+		message: sanitizedMessage,
 	});
-	sendResponse({ success: false, error });
+	sendResponse({ success: false, error: sanitizedMessage });
 }
 
 async function generateSpeech(text: string) {
@@ -112,11 +114,12 @@ async function generateSpeech(text: string) {
 
 	// Make API call to Gemini
 	const response = await fetch(
-		`https://generativelanguage.googleapis.com/v1beta/models/${options.modelName}:generateContent?key=${options.apiKey}`,
+		`https://generativelanguage.googleapis.com/v1beta/models/${options.modelName}:generateContent`,
 		{
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
+				"x-goog-api-key": options.apiKey,
 			},
 			body: JSON.stringify({
 				contents: [
@@ -145,7 +148,7 @@ async function generateSpeech(text: string) {
 	if (!response.ok) {
 		const errorData = await response.json().catch(() => ({}));
 		throw new Error(
-			`Gemini API error: ${response.status} ${response.statusText}. ${errorData.error?.message || ""}`,
+			`API error: ${response.status} ${response.statusText}. ${errorData.error?.message || ""}`,
 		);
 	}
 
