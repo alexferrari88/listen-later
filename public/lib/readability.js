@@ -2779,3 +2779,8 @@ if (typeof module === "object") {
 	/* global module */
 	module.exports = Readability;
 }
+
+if (typeof window === "object") {
+	/* global window */
+	window.Readability = Readability;
+}
