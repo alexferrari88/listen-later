@@ -63,11 +63,14 @@ function loadReadability() {
 		const script = document.createElement("script");
 		script.src = chrome.runtime.getURL("lib/readability.js");
 		script.onload = () => {
-			if (window.Readability) {
-				resolve();
-			} else {
-				reject(new Error("Readability.js failed to load properly"));
-			}
+			// Add a small delay to ensure the script has time to execute
+			setTimeout(() => {
+				if (window.Readability) {
+					resolve();
+				} else {
+					reject(new Error("Readability.js failed to load properly"));
+				}
+			}, 50);
 		};
 		script.onerror = () => reject(new Error("Failed to load Readability.js"));
 

@@ -2774,13 +2774,15 @@ Readability.prototype = {
 	},
 };
 
-if (typeof module === "object") {
+// Export for CommonJS environments (Node.js) - check first
+if (typeof module === "object" && module) {
 	/* eslint-disable-next-line no-redeclare */
 	/* global module */
 	module.exports = Readability;
 }
 
-if (typeof window === "object") {
+// Export for browser environments (including Chrome extensions)
+if (typeof window !== "undefined" && window) {
 	/* global window */
 	window.Readability = Readability;
 }
