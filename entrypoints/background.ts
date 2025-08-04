@@ -58,11 +58,20 @@ async function handleStartTTS(sendResponse: (response?: any) => void) {
 		throw new Error("No active tab found");
 	}
 
-	// Inject content script
+	// Inject Readability.js first, then content script
 	try {
+		// First inject Readability.js
+		await chrome.scripting.executeScript({
+			target: { tabId: tab.id },
+			files: ["lib/readability.js"],
+			world: "MAIN",
+		});
+
+		// Then inject content script (which can now use window.Readability)
 		await chrome.scripting.executeScript({
 			target: { tabId: tab.id },
 			files: ["content.js"],
+			world: "MAIN",
 		});
 
 		sendResponse({ success: true });

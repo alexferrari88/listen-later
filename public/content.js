@@ -1,11 +1,14 @@
 // This content script is injected programmatically by the background script
+// Readability.js is already injected before this script, so window.Readability should be available
 console.log("Content script loaded");
 extractContent();
 
-async function extractContent() {
+function extractContent() {
 	try {
-		// Load Readability.js dynamically
-		await loadReadability();
+		// Readability should already be available
+		if (!window.Readability) {
+			throw new Error("Readability.js not available");
+		}
 
 		// Create a copy of the document for Readability
 		const documentClone = document.cloneNode(true);
@@ -49,31 +52,4 @@ async function extractContent() {
 					: "Unknown error during content extraction",
 		});
 	}
-}
-
-function loadReadability() {
-	return new Promise((resolve, reject) => {
-		// Check if Readability is already loaded
-		if (window.Readability) {
-			resolve();
-			return;
-		}
-
-		// Create script element to load Readability.js
-		const script = document.createElement("script");
-		script.src = chrome.runtime.getURL("lib/readability.js");
-		script.onload = () => {
-			// Add a small delay to ensure the script has time to execute
-			setTimeout(() => {
-				if (window.Readability) {
-					resolve();
-				} else {
-					reject(new Error("Readability.js failed to load properly"));
-				}
-			}, 50);
-		};
-		script.onerror = () => reject(new Error("Failed to load Readability.js"));
-
-		document.head.appendChild(script);
-	});
 }
