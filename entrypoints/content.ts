@@ -1,5 +1,5 @@
 export default defineContentScript({
-	matches: ["<all_urls>"],
+	matches: [],
 	main() {
 		console.log("Content script loaded");
 		extractContent();
