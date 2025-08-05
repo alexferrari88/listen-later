@@ -724,7 +724,7 @@ const PromptModal: React.FC<PromptModalProps> = ({
 							}}
 						/>
 						<small style={{ color: "#666", display: "block", marginTop: "4px" }}>
-							Use {'${content}'} as a placeholder for the article text
+							Use {'${content}'} as a placeholder for the article text. End your prompt with a colon (:) for best results.
 						</small>
 					</div>
 

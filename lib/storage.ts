@@ -161,7 +161,7 @@ export const DEFAULT_SPEECH_STYLE_PROMPTS: SpeechStylePrompt[] = [
 		name: "Documentary Style",
 		description: "Professional, authoritative, and well-paced narration",
 		template:
-			"Narrate the following text in a professional, authoritative, and well-paced documentary style: ${content}",
+			"Narrate the following text in a professional, authoritative, and well-paced documentary style: ${content}:",
 		isDefault: true,
 	},
 	{
@@ -169,28 +169,28 @@ export const DEFAULT_SPEECH_STYLE_PROMPTS: SpeechStylePrompt[] = [
 		name: "Conversational",
 		description: "Friendly, casual tone as if explaining to a friend",
 		template:
-			"Read this text in a friendly, conversational tone as if explaining to a friend: ${content}",
+			"Read this text in a friendly, conversational tone as if explaining to a friend: ${content}:",
 	},
 	{
 		id: "news",
 		name: "News Report",
 		description: "Clear, professional news reporting style",
 		template:
-			"Present this information as a clear, professional news report: ${content}",
+			"Present this information as a clear, professional news report: ${content}:",
 	},
 	{
 		id: "audiobook",
 		name: "Audiobook",
 		description: "Engaging audiobook narration with appropriate pacing",
 		template:
-			"Narrate this text in an engaging audiobook style with appropriate pacing: ${content}",
+			"Narrate this text in an engaging audiobook style with appropriate pacing: ${content}:",
 	},
 	{
 		id: "podcast",
 		name: "Podcast Style",
 		description: "Casual, engaging podcast presentation",
 		template:
-			"Read the following in an engaging, conversational, and friendly tone, as if you were hosting a podcast: ${content}",
+			"Read the following in an engaging, conversational, and friendly tone, as if you were hosting a podcast: ${content}:",
 	},
 ];
 
