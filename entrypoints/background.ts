@@ -151,19 +151,19 @@ const handleStartTTS = withAsyncLogging(async (tab: chrome.tabs.Tab | undefined,
 		});
 
 		logger.background.injection("Starting content script injection", { tabId: targetTab.id, jobId: job.id });
-		// Inject content script with job ID
-		await chrome.scripting.executeScript({
-			target: { tabId: targetTab.id },
-			files: ["content-scripts/content.js"],
-		});
-		
-		// Also inject the job ID so content script knows which job it belongs to
+		// First inject the job ID so content script can access it immediately
 		await chrome.scripting.executeScript({
 			target: { tabId: targetTab.id },
 			func: (jobId: string) => {
 				(globalThis as any).currentJobId = jobId;
 			},
 			args: [job.id],
+		});
+		
+		// Then inject content script - it will now have access to the job ID
+		await chrome.scripting.executeScript({
+			target: { tabId: targetTab.id },
+			files: ["content-scripts/content.js"],
 		});
 		
 		logger.background.injection("Content script injected successfully");
