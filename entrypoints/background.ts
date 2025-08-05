@@ -154,7 +154,7 @@ const handleStartTTS = withAsyncLogging(async (tab: chrome.tabs.Tab | undefined,
 		// Inject content script with job ID
 		await chrome.scripting.executeScript({
 			target: { tabId: targetTab.id },
-			files: ["content.js"],
+			files: ["content-scripts/content.js"],
 		});
 		
 		// Also inject the job ID so content script knows which job it belongs to
