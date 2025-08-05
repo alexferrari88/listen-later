@@ -1,4 +1,5 @@
 // Data Models for storage
+import { logger } from './logger';
 
 // For extension operational state
 export interface ExtensionState {
@@ -31,10 +32,12 @@ export async function setExtensionState(
 ): Promise<void> {
 	const currentState = await getExtensionState();
 	const newState = { ...currentState, ...state };
+	logger.debug("Setting extension state", { from: currentState, to: newState });
 	await chrome.storage.local.set({ [STORAGE_KEYS.STATE]: newState });
 }
 
 export async function resetExtensionState(): Promise<void> {
+	logger.debug("Resetting extension state to idle");
 	await setExtensionState({ status: "idle", message: undefined });
 }
 

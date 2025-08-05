@@ -6,6 +6,7 @@ import {
 	getExtensionOptions,
 	setExtensionOptions,
 } from "../lib/storage";
+import { logger } from "../lib/logger";
 
 const SUPPORTED_MODELS = [
 	"gemini-2.5-flash-preview-tts",
@@ -59,15 +60,22 @@ const Options: React.FC = () => {
 	useEffect(() => {
 		const loadOptions = async () => {
 			try {
+				logger.debug("Loading extension options");
 				const existingOptions = await getExtensionOptions();
 				if (existingOptions) {
+					logger.debug("Loaded existing options", {
+						hasApiKey: !!existingOptions.apiKey,
+						modelName: existingOptions.modelName,
+						voice: existingOptions.voice
+					});
 					setOptions(existingOptions);
 				} else {
+					logger.debug("No existing options, using defaults");
 					const defaultOptions = await getDefaultExtensionOptions();
 					setOptions(defaultOptions);
 				}
 			} catch (error) {
-				console.error("Failed to load options:", error);
+				logger.error("Failed to load options:", error);
 				const defaultOptions = await getDefaultExtensionOptions();
 				setOptions(defaultOptions);
 			} finally {
@@ -79,6 +87,7 @@ const Options: React.FC = () => {
 	}, []);
 
 	const handleInputChange = (field: keyof ExtensionOptions, value: string) => {
+		logger.debug("Option changed", { field, value: field === 'apiKey' ? '[REDACTED]' : value });
 		setOptions((prev) => ({
 			...prev,
 			[field]: value,
@@ -88,13 +97,19 @@ const Options: React.FC = () => {
 	const handleSave = async () => {
 		setIsSaving(true);
 		setSaveMessage("");
+		logger.debug("Saving options", {
+			hasApiKey: !!options.apiKey,
+			modelName: options.modelName,
+			voice: options.voice
+		});
 
 		try {
 			await setExtensionOptions(options);
+			logger.info("Options saved successfully");
 			setSaveMessage("Settings saved successfully!");
 			setTimeout(() => setSaveMessage(""), 3000);
 		} catch (error) {
-			console.error("Failed to save options:", error);
+			logger.error("Failed to save options:", error);
 			setSaveMessage("Failed to save settings. Please try again.");
 		} finally {
 			setIsSaving(false);

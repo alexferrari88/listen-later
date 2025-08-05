@@ -6,6 +6,7 @@ import {
 	getExtensionState,
 	resetExtensionState,
 } from "../lib/storage";
+import { logger } from "../lib/logger";
 
 const Popup: React.FC = () => {
 	const [state, setState] = useState<ExtensionState>({ status: "idle" });
@@ -16,14 +17,17 @@ const Popup: React.FC = () => {
 	useEffect(() => {
 		const loadState = async () => {
 			try {
+				logger.popup.action("Loading initial state");
 				const [currentState, optionsConfigured] = await Promise.all([
 					getExtensionState(),
 					areOptionsConfigured(),
 				]);
+				logger.popup.state(currentState);
+				logger.debug("Options configured:", optionsConfigured);
 				setState(currentState);
 				setIsOptionsConfigured(optionsConfigured);
 			} catch (error) {
-				console.error("Failed to load popup state:", error);
+				logger.error("Failed to load popup state:", error);
 			} finally {
 				setIsLoading(false);
 			}
@@ -37,12 +41,18 @@ const Popup: React.FC = () => {
 		const handleStorageChange = (changes: {
 			[key: string]: chrome.storage.StorageChange;
 		}) => {
+			logger.debug("Storage changed", changes);
 			if (changes.extensionState) {
+				logger.popup.state(changes.extensionState.newValue);
 				setState(changes.extensionState.newValue);
 			}
 			if (changes.extensionOptions) {
+				logger.debug("Options changed, rechecking configuration");
 				// Re-check if options are configured when they change
-				areOptionsConfigured().then(setIsOptionsConfigured);
+				areOptionsConfigured().then((configured) => {
+					logger.debug("Options rechecked, configured:", configured);
+					setIsOptionsConfigured(configured);
+				});
 			}
 		};
 
@@ -52,21 +62,26 @@ const Popup: React.FC = () => {
 
 	const handleGenerateClick = async () => {
 		try {
+			logger.popup.action("Generate speech button clicked");
 			await chrome.runtime.sendMessage({ type: "START_TTS" });
+			logger.debug("START_TTS message sent successfully");
 		} catch (error) {
-			console.error("Failed to send START_TTS message:", error);
+			logger.error("Failed to send START_TTS message:", error);
 		}
 	};
 
 	const handleTryAgain = async () => {
 		try {
+			logger.popup.action("Try again button clicked");
 			await resetExtensionState();
+			logger.debug("Extension state reset successfully");
 		} catch (error) {
-			console.error("Failed to reset state:", error);
+			logger.error("Failed to reset state:", error);
 		}
 	};
 
 	const openOptionsPage = () => {
+		logger.popup.action("Settings button clicked");
 		chrome.runtime.openOptionsPage();
 	};
 
