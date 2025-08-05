@@ -74,14 +74,29 @@ function extractContent() {
 				const tempDiv = document.createElement('div');
 				tempDiv.innerHTML = article.content;
 				
-				// Extract text from paragraph-level elements
+				// Extract text from paragraph-level elements, avoiding nested duplicates
 				const paragraphs: string[] = [];
+				const seenTexts = new Set<string>();
 				const elements = tempDiv.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6');
 				
 				elements.forEach(element => {
 					const text = element.textContent?.trim();
-					if (text && text.length > 0) {
-						paragraphs.push(text);
+					if (text && text.length > 20) { // Only process substantial content
+						// Skip if we've already seen this exact text (avoids nested duplicates)
+						if (!seenTexts.has(text)) {
+							// Check if this element contains other paragraph-level elements
+							const hasNestedContent = element.querySelector('p, li, h1, h2, h3, h4, h5, h6') !== null;
+							
+							// If it has nested content, prefer the parent (li over nested p)
+							// If no nested content, include it
+							if (!hasNestedContent || element.tagName.toLowerCase() === 'li') {
+								paragraphs.push(text);
+								seenTexts.add(text);
+								logger.debug(`Added ${element.tagName}: ${text.substring(0, 50)}...`);
+							} else {
+								logger.debug(`Skipped nested ${element.tagName}: ${text.substring(0, 50)}...`);
+							}
+						}
 					}
 				});
 				
@@ -90,7 +105,8 @@ function extractContent() {
 					extractedText = paragraphs.join('\n\n');
 					logger.debug("Structured extraction complete", {
 						paragraphCount: paragraphs.length,
-						totalLength: extractedText.length
+						totalLength: extractedText.length,
+						duplicatesAvoided: elements.length - paragraphs.length
 					});
 				}
 			}
@@ -108,7 +124,8 @@ function extractContent() {
 				
 				// Remove navigation elements  
 				.replace(/^(home|about|contact|menu|search|login|register)([|\s]+\w+)*$/gim, "")
-				.replace(/\b(previous|next|page \d+( of \d+)?|more\.\.\.)\b[^\n.]*/gi, "")
+				.replace(/\b(previous page|next page|page \d+( of \d+)?|more\.\.\.)\b[^\n.]*/gi, "")
+				.replace(/^\s*(previous|next)\s*$/gim, "")
 				
 				// Remove author/date metadata patterns
 				.replace(/^(by |author:|published|updated|posted|written by)[^\n]*/gim, "")

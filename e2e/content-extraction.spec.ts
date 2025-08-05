@@ -86,7 +86,8 @@ test.describe("Content Extraction Quality", () => {
 			
 			// Remove navigation elements  
 			.replace(/^(home|about|contact|menu|search|login|register)([|\s]+\w+)*$/gim, "")
-			.replace(/\b(previous|next|page \d+( of \d+)?|more\.\.\.)\b[^\n.]*/gi, "")
+			.replace(/\b(previous page|next page|page \d+( of \d+)?|more\.\.\.)\b[^\n.]*/gi, "")
+			.replace(/^\s*(previous|next)\s*$/gim, "")
 			
 			// Remove author/date metadata patterns
 			.replace(/^(by |author:|published|updated|posted|written by)[^\n]*/gim, "")
