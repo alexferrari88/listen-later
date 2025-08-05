@@ -216,7 +216,7 @@ const Popup: React.FC = () => {
 	// Processing state
 	if (state.status === "processing") {
 		const isLongRunning = elapsedTime > 10;
-		const estimatedTime = processingStage.includes("speech") ? "30-60s" : "5-10s";
+		const estimatedTime = processingStage.includes("speech") ? "1-10 min" : "5-10s";
 		
 		return (
 			<div style={containerStyle}>
@@ -272,7 +272,7 @@ const Popup: React.FC = () => {
 						{/* Status text */}
 						<p style={processingTitleStyle}>{processingStage}</p>
 						<p style={processingSubtitleStyle}>
-							{state.message || "This may take a moment..."}
+							{state.message || "Your audio will download automatically when ready"}
 						</p>
 						
 						{/* Time and progress info */}
@@ -287,7 +287,8 @@ const Popup: React.FC = () => {
 							)}
 							{isLongRunning && (
 								<div style={longRunningStyle}>
-									⏳ AI processing takes time - please wait
+									⏳ Processing can take up to 10 minutes for longer texts.<br/>
+									You can close this popup and continue browsing - the download will start automatically when ready.
 								</div>
 							)}
 						</div>
