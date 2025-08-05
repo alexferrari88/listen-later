@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ProcessingJob } from "../lib/storage";
 
 interface TextPreviewModalProps {
@@ -22,17 +22,17 @@ const TextPreviewModal: React.FC<TextPreviewModalProps> = ({
 
 	useEffect(() => {
 		const handleKeydown = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
+			if (e.key === "Escape") {
 				handleCancel();
 			}
 		};
 
-		document.addEventListener('keydown', handleKeydown);
+		document.addEventListener("keydown", handleKeydown);
 
 		return () => {
-			document.removeEventListener('keydown', handleKeydown);
+			document.removeEventListener("keydown", handleKeydown);
 		};
-	}, []);
+	}, [handleCancel]);
 
 	const handleConfirm = async () => {
 		if (!editedText.trim()) {
@@ -51,23 +51,43 @@ const TextPreviewModal: React.FC<TextPreviewModalProps> = ({
 	};
 
 	const characterCount = editedText.length;
-	const wordCount = editedText.trim().split(/\s+/).filter(word => word.length > 0).length;
+	const wordCount = editedText
+		.trim()
+		.split(/\s+/)
+		.filter((word) => word.length > 0).length;
 
 	return (
-		<div style={overlayStyle} onClick={handleCancel}>
-			<div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+		<div
+			style={overlayStyle}
+			onClick={handleCancel}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					handleCancel();
+				}
+			}}
+			role="button"
+			tabIndex={0}
+		>
+			<div
+				style={modalStyle}
+				onClick={(e) => e.stopPropagation()}
+				onKeyDown={(e) => e.stopPropagation()}
+				role="dialog"
+				tabIndex={-1}
+			>
 				<div style={headerStyle}>
 					<h3 style={titleStyle}>Review Extracted Text</h3>
 					<div style={articleInfoStyle}>
 						{job.tabInfo.articleTitle || job.tabInfo.title}
 					</div>
 				</div>
-				
+
 				<div style={contentStyle}>
 					<div style={instructionsStyle}>
-						Review and edit the extracted text below. Make any necessary corrections before generating speech.
+						Review and edit the extracted text below. Make any necessary
+						corrections before generating speech.
 					</div>
-					
+
 					<textarea
 						value={editedText}
 						onChange={(e) => setEditedText(e.target.value)}
@@ -75,16 +95,21 @@ const TextPreviewModal: React.FC<TextPreviewModalProps> = ({
 						placeholder="Extracted text will appear here..."
 						disabled={isConfirming}
 					/>
-					
+
 					<div style={statsStyle}>
-						<span style={statStyle}>{characterCount.toLocaleString()} characters</span>
+						<span style={statStyle}>
+							{characterCount.toLocaleString()} characters
+						</span>
 						<span style={statStyle}>{wordCount.toLocaleString()} words</span>
-						<span style={statStyle}>~{Math.ceil(wordCount / 150)} min read</span>
+						<span style={statStyle}>
+							~{Math.ceil(wordCount / 150)} min read
+						</span>
 					</div>
 				</div>
 
 				<div style={actionsStyle}>
 					<button
+						type="button"
 						onClick={handleCancel}
 						style={cancelButtonStyle}
 						disabled={isConfirming}
@@ -92,6 +117,7 @@ const TextPreviewModal: React.FC<TextPreviewModalProps> = ({
 						Cancel
 					</button>
 					<button
+						type="button"
 						onClick={handleConfirm}
 						style={{
 							...confirmButtonStyle,

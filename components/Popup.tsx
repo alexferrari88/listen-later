@@ -65,7 +65,6 @@ const Popup: React.FC = () => {
 					logger.debug("Current tab jobs:", tabJobs.length);
 					logger.debug("Other tab jobs:", otherTabJobs.length);
 				}
-
 			} catch (error) {
 				logger.error("Failed to load popup state:", error);
 			} finally {
@@ -103,7 +102,6 @@ const Popup: React.FC = () => {
 						otherJobs: otherTabJobs.length,
 					});
 				}
-
 			}
 			if (changes.extensionOptions) {
 				logger.debug("Options changed, rechecking configuration");
@@ -118,7 +116,6 @@ const Popup: React.FC = () => {
 		chrome.storage.onChanged.addListener(handleStorageChange);
 		return () => chrome.storage.onChanged.removeListener(handleStorageChange);
 	}, [currentTabId]);
-
 
 	// Cleanup effect
 	useEffect(() => {
@@ -172,13 +169,19 @@ const Popup: React.FC = () => {
 	const handleCancelJob = async (jobId: string) => {
 		try {
 			logger.popup.action("Cancel job button clicked", { jobId });
-			await updateJob(jobId, {
-				status: "error",
-				message: "Cancelled by user",
+			// Send message to background to handle cancellation and show notification
+			await chrome.runtime.sendMessage({
+				type: "CANCEL_JOB",
+				jobId: jobId,
 			});
 			logger.debug("Job cancelled successfully", { jobId });
 		} catch (error) {
 			logger.error("Failed to cancel job:", error);
+			// Fallback to local update if background message fails
+			await updateJob(jobId, {
+				status: "error",
+				message: "Cancelled by user",
+			});
 		}
 	};
 
@@ -230,11 +233,22 @@ const Popup: React.FC = () => {
 		) {
 			return "Extracting content";
 		} else if (
+			message.includes("Preparing speech") ||
+			message.includes("Starting speech")
+		) {
+			return "Preparing";
+		} else if (
 			message.includes("speech") ||
 			message.includes("AI") ||
-			message.includes("generating")
+			message.includes("generating") ||
+			message.includes("Connecting to Gemini")
 		) {
 			return "Generating speech";
+		} else if (
+			message.includes("processing audio") ||
+			message.includes("Speech generated successfully")
+		) {
+			return "Processing audio";
 		} else if (
 			message.includes("download") ||
 			message.includes("Preparing audio")
@@ -286,8 +300,23 @@ const Popup: React.FC = () => {
 				{showTabInfo && <div style={jobTitleStyle}>{displayName}</div>}
 
 				{job.status === "processing" && (
-					<div style={jobMessageStyle}>
-						{stage}: {job.message}
+					<div>
+						<div style={jobMessageStyle}>
+							{stage}: {job.message}
+						</div>
+						{job.progress !== undefined && (
+							<div style={progressContainerStyle}>
+								<div style={progressBarStyle}>
+									<div
+										style={{
+											...progressFillStyle,
+											width: `${Math.max(0, Math.min(100, job.progress))}%`,
+										}}
+									/>
+								</div>
+								<div style={progressTextStyle}>{Math.round(job.progress)}%</div>
+							</div>
+						)}
 					</div>
 				)}
 
@@ -458,7 +487,6 @@ const Popup: React.FC = () => {
 					)}
 				</div>
 			</div>
-			
 		</div>
 	);
 };
@@ -777,6 +805,36 @@ const jobMessageStyle: React.CSSProperties = {
 	color: "#666",
 	marginBottom: "8px",
 	fontStyle: "italic",
+};
+
+const progressContainerStyle: React.CSSProperties = {
+	display: "flex",
+	alignItems: "center",
+	gap: "8px",
+	marginBottom: "8px",
+};
+
+const progressBarStyle: React.CSSProperties = {
+	flex: 1,
+	height: "6px",
+	backgroundColor: "#e0e0e0",
+	borderRadius: "3px",
+	overflow: "hidden",
+};
+
+const progressFillStyle: React.CSSProperties = {
+	height: "100%",
+	backgroundColor: "#4285f4",
+	borderRadius: "3px",
+	transition: "width 0.3s ease",
+};
+
+const progressTextStyle: React.CSSProperties = {
+	fontSize: "11px",
+	color: "#666",
+	fontWeight: "500",
+	minWidth: "35px",
+	textAlign: "right" as const,
 };
 
 const jobErrorStyle: React.CSSProperties = {

@@ -1,11 +1,13 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 /**
  * Test for numbered list preservation in content extraction
  * Uses TDD approach to ensure numbered lists maintain their numbering in extracted text
  */
 test.describe("Numbered List Preservation", () => {
-	test("should preserve numbers in ordered lists during content extraction", async ({ page }) => {
+	test("should preserve numbers in ordered lists during content extraction", async ({
+		page,
+	}) => {
 		// Create a test page with ordered lists
 		const testHTML = `
 			<!DOCTYPE html>
@@ -45,33 +47,38 @@ test.describe("Numbered List Preservation", () => {
 
 		// Simulate the updated content extraction logic with numbered list support
 		const currentResult = await page.evaluate(() => {
-			const article = document.querySelector('article');
+			const article = document.querySelector("article");
 			if (!article) return { error: "No article found" };
 
 			// Simulate updated extension logic with numbered list preservation
-			const tempDiv = document.createElement('div');
+			const tempDiv = document.createElement("div");
 			tempDiv.innerHTML = article.innerHTML;
 
 			const paragraphs: string[] = [];
 			const seenTexts = new Set<string>();
-			const elements = tempDiv.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6');
+			const elements = tempDiv.querySelectorAll(
+				"p, li, h1, h2, h3, h4, h5, h6",
+			);
 
-			elements.forEach(element => {
+			elements.forEach((element) => {
 				let text = element.textContent?.trim();
 				if (text && text.length > 20) {
 					// For list items, check if they're in an ordered list and add numbering
-					if (element.tagName.toLowerCase() === 'li') {
-						const parentOl = element.closest('ol');
+					if (element.tagName.toLowerCase() === "li") {
+						const parentOl = element.closest("ol");
 						if (parentOl) {
 							// Get the starting number (default is 1)
-							const startNumber = parseInt(parentOl.getAttribute('start') || '1', 10);
-							
+							const startNumber = parseInt(
+								parentOl.getAttribute("start") || "1",
+								10,
+							);
+
 							// Find the position of this li within its parent ol
-							const siblingLis = Array.from(parentOl.children).filter(child => 
-								child.tagName.toLowerCase() === 'li'
+							const siblingLis = Array.from(parentOl.children).filter(
+								(child) => child.tagName.toLowerCase() === "li",
 							);
 							const position = siblingLis.indexOf(element);
-							
+
 							if (position !== -1) {
 								const listNumber = startNumber + position;
 								text = `${listNumber}. ${text}`;
@@ -80,8 +87,9 @@ test.describe("Numbered List Preservation", () => {
 					}
 
 					if (!seenTexts.has(text)) {
-						const hasNestedContent = element.querySelector('p, li, h1, h2, h3, h4, h5, h6') !== null;
-						if (!hasNestedContent || element.tagName.toLowerCase() === 'li') {
+						const hasNestedContent =
+							element.querySelector("p, li, h1, h2, h3, h4, h5, h6") !== null;
+						if (!hasNestedContent || element.tagName.toLowerCase() === "li") {
 							paragraphs.push(text);
 							seenTexts.add(text);
 						}
@@ -90,12 +98,12 @@ test.describe("Numbered List Preservation", () => {
 			});
 
 			return {
-				extractedText: paragraphs.join('\n\n'),
-				paragraphCount: paragraphs.length
+				extractedText: paragraphs.join("\n\n"),
+				paragraphCount: paragraphs.length,
 			};
 		});
 
-		if ('error' in currentResult) {
+		if ("error" in currentResult) {
 			throw new Error(currentResult.error);
 		}
 
@@ -103,20 +111,26 @@ test.describe("Numbered List Preservation", () => {
 		console.log(currentResult.extractedText);
 
 		// Test current behavior - should fail because numbers are missing
-		expect(currentResult.extractedText).toContain("First, AI systems need extensive training data");
-		expect(currentResult.extractedText).toContain("Second, they require careful validation");
-		expect(currentResult.extractedText).toContain("Third, ethical considerations must be addressed");
+		expect(currentResult.extractedText).toContain(
+			"First, AI systems need extensive training data",
+		);
+		expect(currentResult.extractedText).toContain(
+			"Second, they require careful validation",
+		);
+		expect(currentResult.extractedText).toContain(
+			"Third, ethical considerations must be addressed",
+		);
 
 		// These should now pass with the numbered list preservation fix
 		const shouldHaveNumbers = [
 			"1. First, AI systems need extensive training data",
-			"2. Second, they require careful validation and testing", 
+			"2. Second, they require careful validation and testing",
 			"3. Third, ethical considerations must be addressed",
 			"5. Define clear success metrics", // Custom start number
 			"6. Implement monitoring and logging",
 			"7. Plan for gradual rollout",
 			"1. Nested item one with more content to meet length threshold", // Nested list should restart numbering
-			"2. Nested item two with bold text"
+			"2. Nested item two with bold text",
 		];
 
 		// Count how many numbered items are properly preserved
@@ -127,7 +141,9 @@ test.describe("Numbered List Preservation", () => {
 			}
 		}
 
-		console.log(`Numbers preserved: ${preservedNumbers}/${shouldHaveNumbers.length}`);
+		console.log(
+			`Numbers preserved: ${preservedNumbers}/${shouldHaveNumbers.length}`,
+		);
 
 		// Verify that numbered lists are now properly preserved
 		expect(preservedNumbers).toBe(shouldHaveNumbers.length);
@@ -171,7 +187,9 @@ Finally, some nested content:
 		expect(currentResult.extractedText.length).toBeGreaterThan(200);
 	});
 
-	test("should handle different list styles and starting numbers", async ({ page }) => {
+	test("should handle different list styles and starting numbers", async ({
+		page,
+	}) => {
 		const testHTML = `
 			<!DOCTYPE html>
 			<html>
@@ -198,18 +216,18 @@ Finally, some nested content:
 		await page.goto(`data:text/html,${encodeURIComponent(testHTML)}`);
 
 		const result = await page.evaluate(() => {
-			const article = document.querySelector('article');
+			const article = document.querySelector("article");
 			if (!article) return { error: "No article found" };
 
 			// This test documents expected behavior for different list types
 			// Implementation will be added in the next step
-			const tempDiv = document.createElement('div');
+			const tempDiv = document.createElement("div");
 			tempDiv.innerHTML = article.innerHTML;
 
-			const elements = tempDiv.querySelectorAll('li');
+			const elements = tempDiv.querySelectorAll("li");
 			const listItems: string[] = [];
 
-			elements.forEach(element => {
+			elements.forEach((element) => {
 				const text = element.textContent?.trim();
 				if (text) {
 					listItems.push(text);
@@ -218,11 +236,11 @@ Finally, some nested content:
 
 			return {
 				extractedItems: listItems,
-				itemCount: listItems.length
+				itemCount: listItems.length,
 			};
 		});
 
-		if ('error' in result) {
+		if ("error" in result) {
 			throw new Error(result.error);
 		}
 
@@ -236,7 +254,9 @@ Finally, some nested content:
 		console.log("Note: Full numbered list support to be implemented");
 	});
 
-	test("should not create duplicates when same content exists in lists and paragraphs", async ({ page }) => {
+	test("should not create duplicates when same content exists in lists and paragraphs", async ({
+		page,
+	}) => {
 		// This test simulates the real-world issue where content appears in both <li> and <p> elements
 		const testHTML = `
 			<!DOCTYPE html>
@@ -263,120 +283,165 @@ Finally, some nested content:
 		await page.goto(`data:text/html,${encodeURIComponent(testHTML)}`);
 
 		const result = await page.evaluate(() => {
-			const article = document.querySelector('article');
+			const article = document.querySelector("article");
 			if (!article) return { error: "No article found" };
 
 			// Simulate the updated extension logic with deduplication fix
-			const tempDiv = document.createElement('div');
+			const tempDiv = document.createElement("div");
 			tempDiv.innerHTML = article.innerHTML;
 
 			const paragraphs: string[] = [];
 			const seenTexts = new Set<string>();
-			const elements = tempDiv.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6');
+			const elements = tempDiv.querySelectorAll(
+				"p, li, h1, h2, h3, h4, h5, h6",
+			);
 
-			const processedElements: { tag: string, text: string, wasSkipped: boolean, reason?: string }[] = [];
+			const processedElements: {
+				tag: string;
+				text: string;
+				wasSkipped: boolean;
+				reason?: string;
+			}[] = [];
 
-			elements.forEach(element => {
+			elements.forEach((element) => {
 				const originalText = element.textContent?.trim();
 				if (originalText && originalText.length > 20) {
 					// Skip if we've already seen this exact text (avoids nested duplicates)
 					if (!seenTexts.has(originalText)) {
 						let finalText = originalText;
-						
+
 						// For list items, check if they're in an ordered list and add numbering
-						if (element.tagName.toLowerCase() === 'li') {
-							const parentOl = element.closest('ol');
+						if (element.tagName.toLowerCase() === "li") {
+							const parentOl = element.closest("ol");
 							if (parentOl) {
 								// Get the starting number (default is 1)
-								const startNumber = parseInt(parentOl.getAttribute('start') || '1', 10);
-								
+								const startNumber = parseInt(
+									parentOl.getAttribute("start") || "1",
+									10,
+								);
+
 								// Find the position of this li within its parent ol
-								const siblingLis = Array.from(parentOl.children).filter(child => 
-									child.tagName.toLowerCase() === 'li'
+								const siblingLis = Array.from(parentOl.children).filter(
+									(child) => child.tagName.toLowerCase() === "li",
 								);
 								const position = siblingLis.indexOf(element);
-								
+
 								if (position !== -1) {
 									const listNumber = startNumber + position;
 									finalText = `${listNumber}. ${originalText}`;
 								}
 							}
 						}
-						
+
 						// Check if this element contains other paragraph-level elements
-						const hasNestedContent = element.querySelector('p, li, h1, h2, h3, h4, h5, h6') !== null;
-						
+						const hasNestedContent =
+							element.querySelector("p, li, h1, h2, h3, h4, h5, h6") !== null;
+
 						// If it has nested content, prefer the parent (li over nested p)
 						// If no nested content, include it
-						if (!hasNestedContent || element.tagName.toLowerCase() === 'li') {
+						if (!hasNestedContent || element.tagName.toLowerCase() === "li") {
 							paragraphs.push(finalText);
 							// Store both original and final text to prevent future duplicates
 							seenTexts.add(originalText);
 							if (finalText !== originalText) {
 								seenTexts.add(finalText);
 							}
-							processedElements.push({ tag: element.tagName, text: finalText, wasSkipped: false });
+							processedElements.push({
+								tag: element.tagName,
+								text: finalText,
+								wasSkipped: false,
+							});
 						} else {
 							// Still mark as seen to prevent duplicates, even if we don't include it
 							seenTexts.add(originalText);
-							processedElements.push({ tag: element.tagName, text: originalText, wasSkipped: true, reason: 'nested content' });
+							processedElements.push({
+								tag: element.tagName,
+								text: originalText,
+								wasSkipped: true,
+								reason: "nested content",
+							});
 						}
 					} else {
-						processedElements.push({ tag: element.tagName, text: originalText, wasSkipped: true, reason: 'duplicate' });
+						processedElements.push({
+							tag: element.tagName,
+							text: originalText,
+							wasSkipped: true,
+							reason: "duplicate",
+						});
 					}
 				}
 			});
 
 			return {
-				extractedText: paragraphs.join('\n\n'),
+				extractedText: paragraphs.join("\n\n"),
 				paragraphCount: paragraphs.length,
 				processedElements,
-				totalElements: elements.length
+				totalElements: elements.length,
 			};
 		});
 
-		if ('error' in result) {
+		if ("error" in result) {
 			throw new Error(result.error);
 		}
 
 		console.log("=== DUPLICATION TEST RESULTS ===");
 		console.log(`Total elements: ${result.totalElements}`);
 		console.log(`Final paragraphs: ${result.paragraphCount}`);
-		
+
 		// Log what happened to each element
 		result.processedElements.forEach((el, i) => {
-			const status = el.wasSkipped ? `SKIPPED (${el.reason})` : 'INCLUDED';
-			console.log(`${i + 1}. ${el.tag}: ${status} - ${el.text.substring(0, 50)}...`);
+			const status = el.wasSkipped ? `SKIPPED (${el.reason})` : "INCLUDED";
+			console.log(
+				`${i + 1}. ${el.tag}: ${status} - ${el.text.substring(0, 50)}...`,
+			);
 		});
 
 		console.log("\n=== FINAL EXTRACTED TEXT ===");
 		console.log(result.extractedText);
 
 		// Verify no duplicates - each key concept should appear only once
-		const lines = result.extractedText.split('\n\n').filter(line => line.trim().length > 0);
-		
+		const lines = result.extractedText
+			.split("\n\n")
+			.filter((line) => line.trim().length > 0);
+
 		const keyPhrases = [
 			"First: there is no AGI, there are many AGIs",
 			"Second: AI moves all costs to prompting",
-			"Third: AI is amplified intelligence"
+			"Third: AI is amplified intelligence",
 		];
 
 		for (const phrase of keyPhrases) {
-			const occurrences = lines.filter(line => line.toLowerCase().includes(phrase.toLowerCase()));
+			const occurrences = lines.filter((line) =>
+				line.toLowerCase().includes(phrase.toLowerCase()),
+			);
 			expect(occurrences.length).toBe(1); // Should appear exactly once
 			console.log(`✅ "${phrase.substring(0, 30)}..." appears exactly once`);
 		}
 
 		// Should have numbered versions in the final output
-		expect(result.extractedText).toContain("1. First: there is no AGI, there are many AGIs");
-		expect(result.extractedText).toContain("2. Second: AI moves all costs to prompting");
-		expect(result.extractedText).toContain("3. Third: AI is amplified intelligence");
+		expect(result.extractedText).toContain(
+			"1. First: there is no AGI, there are many AGIs",
+		);
+		expect(result.extractedText).toContain(
+			"2. Second: AI moves all costs to prompting",
+		);
+		expect(result.extractedText).toContain(
+			"3. Third: AI is amplified intelligence",
+		);
 
 		// Should NOT have duplicate non-numbered versions (check for patterns at start of lines without numbers)
-		expect(result.extractedText).not.toMatch(/^First: there is no AGI, there are many AGIs/m);
-		expect(result.extractedText).not.toMatch(/^Second: AI moves all costs to prompting/m);
-		expect(result.extractedText).not.toMatch(/^Third: AI is amplified intelligence/m);
+		expect(result.extractedText).not.toMatch(
+			/^First: there is no AGI, there are many AGIs/m,
+		);
+		expect(result.extractedText).not.toMatch(
+			/^Second: AI moves all costs to prompting/m,
+		);
+		expect(result.extractedText).not.toMatch(
+			/^Third: AI is amplified intelligence/m,
+		);
 
-		console.log("✅ SUCCESS: No duplicates found, numbered lists properly preserved!");
+		console.log(
+			"✅ SUCCESS: No duplicates found, numbered lists properly preserved!",
+		);
 	});
 });

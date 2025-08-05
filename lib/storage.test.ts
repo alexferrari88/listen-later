@@ -65,7 +65,11 @@ describe("Storage Functions", () => {
 					{
 						id: "test-job",
 						tabId: 1,
-						tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+						tabInfo: {
+							url: "http://test.com",
+							title: "Test",
+							domain: "test.com",
+						},
 						status: "processing",
 						message: "Working...",
 						startTime: Date.now(),
@@ -81,7 +85,10 @@ describe("Storage Functions", () => {
 		});
 
 		it("should merge partial state updates with existing state", async () => {
-			const initialState: ExtensionState = { activeJobs: [], maxConcurrentJobs: 3 };
+			const initialState: ExtensionState = {
+				activeJobs: [],
+				maxConcurrentJobs: 3,
+			};
 			mockStorageData["extensionState"] = initialState;
 
 			const newJob = {
@@ -129,7 +136,11 @@ describe("Storage Functions", () => {
 					{
 						id: "test-job",
 						tabId: 1,
-						tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+						tabInfo: {
+							url: "http://test.com",
+							title: "Test",
+							domain: "test.com",
+						},
 						status: "error",
 						message: "Something went wrong",
 						startTime: Date.now(),
@@ -178,15 +189,15 @@ describe("Storage Functions", () => {
 
 			// Verify storage was called
 			expect(mockStorage.set).toHaveBeenCalledTimes(1);
-			
+
 			// Get the actual call arguments
 			const callArgs = mockStorage.set.mock.calls[0][0];
 			const storedOptions = callArgs.extensionOptions;
-			
+
 			// API key should be encrypted (different from original)
 			expect(storedOptions.apiKey).not.toBe(options.apiKey);
 			expect(storedOptions.apiKey).toBeTruthy();
-			
+
 			// Other fields should remain unchanged
 			expect(storedOptions.modelName).toBe(options.modelName);
 			expect(storedOptions.voice).toBe(options.voice);
@@ -207,7 +218,7 @@ describe("Storage Functions", () => {
 
 			// The retrieved options should match the original
 			expect(retrievedOptions).toEqual(originalOptions);
-			
+
 			// Clean up by clearing the stored data to prevent interference with other tests
 			delete mockStorageData.extensionOptions;
 		});

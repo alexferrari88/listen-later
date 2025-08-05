@@ -1,12 +1,12 @@
 import type React from "react";
 import { useEffect, useState } from "react";
+import { logger } from "../lib/logger";
 import {
 	type ExtensionOptions,
 	getDefaultExtensionOptions,
 	getExtensionOptions,
 	setExtensionOptions,
 } from "../lib/storage";
-import { logger } from "../lib/logger";
 
 const SUPPORTED_MODELS = [
 	"gemini-2.5-flash-preview-tts",
@@ -66,7 +66,7 @@ const Options: React.FC = () => {
 					logger.debug("Loaded existing options", {
 						hasApiKey: !!existingOptions.apiKey,
 						modelName: existingOptions.modelName,
-						voice: existingOptions.voice
+						voice: existingOptions.voice,
 					});
 					setOptions(existingOptions);
 				} else {
@@ -87,7 +87,10 @@ const Options: React.FC = () => {
 	}, []);
 
 	const handleInputChange = (field: keyof ExtensionOptions, value: string) => {
-		logger.debug("Option changed", { field, value: field === 'apiKey' ? '[REDACTED]' : value });
+		logger.debug("Option changed", {
+			field,
+			value: field === "apiKey" ? "[REDACTED]" : value,
+		});
 		setOptions((prev) => ({
 			...prev,
 			[field]: value,
@@ -100,7 +103,7 @@ const Options: React.FC = () => {
 		logger.debug("Saving options", {
 			hasApiKey: !!options.apiKey,
 			modelName: options.modelName,
-			voice: options.voice
+			voice: options.voice,
 		});
 
 		try {

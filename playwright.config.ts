@@ -6,7 +6,7 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,
 	workers: 1, // Extension testing requires single worker
-	reporter: "html",
+	reporter: "list",
 	use: {
 		trace: "on-first-retry",
 		headless: true, // Try headless first for CI compatibility
