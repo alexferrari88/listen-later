@@ -125,6 +125,15 @@ interface ExtensionOptions {
 - `public/` - Static assets (icons)
 - `.output/chrome-mv3/` - Built extension files for Chrome
 
+## Available MCP Tools
+
+Claude Code has access to additional development tools through MCP (Model Context Protocol):
+
+- **Context7**: Fetch up-to-date documentation and code examples for any library or framework
+- **Playwright Browser**: Automated browser testing and web page interaction capabilities
+
+These tools extend Claude's capabilities beyond the core development environment, enabling real-time documentation lookup and browser automation for testing and debugging.
+
 ## Development Notes
 
 - WXT handles manifest generation and build process
