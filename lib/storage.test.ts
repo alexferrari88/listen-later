@@ -174,11 +174,19 @@ describe("Storage Functions", () => {
 				apiKey: "test-key",
 				modelName: "gemini-2.5-flash-preview-tts",
 				voice: "Aoede",
+				speechStylePrompts: [],
+				defaultPromptId: "",
 			};
 			mockStorageData["extensionOptions"] = storedOptions;
 
 			const options = await getExtensionOptions();
-			expect(options).toEqual(storedOptions);
+			// Should add default prompts and prompt ID when missing
+			expect(options?.apiKey).toBe("test-key");
+			expect(options?.modelName).toBe("gemini-2.5-flash-preview-tts");
+			expect(options?.voice).toBe("Aoede");
+			expect(options?.speechStylePrompts).toBeDefined();
+			expect(options?.speechStylePrompts.length).toBeGreaterThan(0);
+			expect(options?.defaultPromptId).toBe("documentary");
 		});
 
 		it("should store extension options with encrypted API key", async () => {
@@ -186,6 +194,8 @@ describe("Storage Functions", () => {
 				apiKey: "my-api-key",
 				modelName: "gemini-2.5-pro-preview-tts",
 				voice: "Zephyr",
+				speechStylePrompts: [],
+				defaultPromptId: "documentary",
 			};
 
 			await setExtensionOptions(options);
@@ -211,6 +221,8 @@ describe("Storage Functions", () => {
 				apiKey: "test-api-key-12345",
 				modelName: "gemini-2.5-flash-preview-tts",
 				voice: "Aoede",
+				speechStylePrompts: [],
+				defaultPromptId: "documentary",
 			};
 
 			// Store the options (this encrypts the API key)
@@ -219,8 +231,12 @@ describe("Storage Functions", () => {
 			// Retrieve the options (this should decrypt the API key)
 			const retrievedOptions = await getExtensionOptions();
 
-			// The retrieved options should match the original
-			expect(retrievedOptions).toEqual(originalOptions);
+			// The retrieved options should have the same core data
+			expect(retrievedOptions?.apiKey).toBe("test-api-key-12345");
+			expect(retrievedOptions?.modelName).toBe("gemini-2.5-flash-preview-tts");
+			expect(retrievedOptions?.voice).toBe("Aoede");
+			expect(retrievedOptions?.defaultPromptId).toBe("documentary");
+			expect(retrievedOptions?.speechStylePrompts).toBeDefined();
 
 			// Clean up by clearing the stored data to prevent interference with other tests
 			delete mockStorageData.extensionOptions;
@@ -228,11 +244,12 @@ describe("Storage Functions", () => {
 
 		it("should return default options with correct values", async () => {
 			const defaultOptions = await getDefaultExtensionOptions();
-			expect(defaultOptions).toEqual({
-				apiKey: "",
-				modelName: "gemini-2.5-flash-preview-tts",
-				voice: "Aoede",
-			});
+			expect(defaultOptions.apiKey).toBe("");
+			expect(defaultOptions.modelName).toBe("gemini-2.5-flash-preview-tts");
+			expect(defaultOptions.voice).toBe("Aoede");
+			expect(defaultOptions.speechStylePrompts).toBeDefined();
+			expect(defaultOptions.speechStylePrompts.length).toBeGreaterThan(0);
+			expect(defaultOptions.defaultPromptId).toBe("documentary");
 		});
 	});
 
@@ -247,6 +264,8 @@ describe("Storage Functions", () => {
 				apiKey: "",
 				modelName: "gemini-2.5-flash-preview-tts",
 				voice: "Aoede",
+				speechStylePrompts: [],
+				defaultPromptId: "documentary",
 			};
 			mockStorageData["extensionOptions"] = options;
 
@@ -259,6 +278,8 @@ describe("Storage Functions", () => {
 				apiKey: "   ",
 				modelName: "gemini-2.5-flash-preview-tts",
 				voice: "Aoede",
+				speechStylePrompts: [],
+				defaultPromptId: "documentary",
 			};
 			mockStorageData["extensionOptions"] = options;
 
@@ -271,6 +292,8 @@ describe("Storage Functions", () => {
 				apiKey: "valid-api-key",
 				modelName: "gemini-2.5-flash-preview-tts",
 				voice: "Aoede",
+				speechStylePrompts: [],
+				defaultPromptId: "documentary",
 			};
 			mockStorageData["extensionOptions"] = options;
 
@@ -563,6 +586,165 @@ describe("Storage Functions", () => {
 		});
 	});
 
+	describe("Security enhancements", () => {
+		describe("filename sanitization", () => {
+			it("should prevent path traversal attacks", () => {
+				const tabInfo: TabInfo = {
+					url: "https://malicious.com/article",
+					title: "../../../etc/passwd",
+					domain: "malicious.com",
+				};
+
+				const filename = generateFilename(tabInfo);
+				expect(filename).not.toContain("../");
+				expect(filename).not.toContain("./");
+				expect(filename).toBe("etc passwd - malicious.com.mp3");
+			});
+
+			it("should remove null bytes and control characters", () => {
+				const tabInfo: TabInfo = {
+					url: "https://test.com/article",
+					title: "Title\x00with\x01control\x1fchars",
+					domain: "test.com",
+				};
+
+				const filename = generateFilename(tabInfo);
+				expect(filename).not.toMatch(/[\x00-\x1f]/);
+				expect(filename).toBe("Titlewithcontrolchars - test.com.mp3");
+			});
+
+			it("should handle Windows reserved names", () => {
+				const reservedNames = ["CON", "PRN", "AUX", "NUL", "COM1", "COM9", "LPT1", "LPT9"];
+				
+				for (const reserved of reservedNames) {
+					const tabInfo: TabInfo = {
+						url: "https://test.com/article",
+						title: reserved,
+						domain: "test.com",
+					};
+
+					const filename = generateFilename(tabInfo);
+					expect(filename).toBe(`file_${reserved} - test.com.mp3`);
+				}
+			});
+
+			it("should handle mixed case Windows reserved names", () => {
+				const tabInfo: TabInfo = {
+					url: "https://test.com/article",
+					title: "con",
+					domain: "test.com",
+				};
+
+				const filename = generateFilename(tabInfo);
+				expect(filename).toBe("file_con - test.com.mp3");
+			});
+
+			it("should handle leading dots and provide fallback names", () => {
+				const testCases = [
+					{ title: ".", expected: "unnamed_file" },
+					{ title: "..", expected: "unnamed_file" },
+					{ title: "...", expected: "unnamed_file" },
+					{ title: ".hidden", expected: "hidden" },
+					{ title: "...hidden", expected: "hidden" },
+				];
+
+				for (const testCase of testCases) {
+					const tabInfo: TabInfo = {
+						url: "https://test.com/article",
+						title: testCase.title,
+						domain: "test.com",
+					};
+
+					const filename = generateFilename(tabInfo);
+					expect(filename).toBe(`${testCase.expected} - test.com.mp3`);
+				}
+			});
+
+			it("should provide fallback for completely sanitized names", () => {
+				const tabInfo: TabInfo = {
+					url: "https://test.com/article",
+					title: "///...///",
+					domain: "test.com",
+				};
+
+				const filename = generateFilename(tabInfo);
+				expect(filename).toBe("unnamed_file - test.com.mp3");
+			});
+		});
+
+		describe("encryption security", () => {
+			it("should use AES-GCM encryption for new API keys", async () => {
+				const options: ExtensionOptions = {
+					apiKey: "test-secure-key",
+					modelName: "gemini-2.5-flash-preview-tts",
+					voice: "Aoede",
+					speechStylePrompts: [],
+					defaultPromptId: "documentary",
+				};
+
+				await setExtensionOptions(options);
+
+				// Get the raw stored data
+				const storedData = mockStorageData["extensionOptions"];
+				expect(storedData.apiKey).not.toBe("test-secure-key");
+				
+				// New encryption format should be structured JSON
+				let parsed;
+				try {
+					parsed = JSON.parse(atob(storedData.apiKey));
+				} catch (error) {
+					// Should not fail to parse
+					expect(error).toBeNull();
+				}
+
+				expect(parsed).toBeDefined();
+				expect(parsed.v).toBe(1); // Version should be 1
+				expect(parsed.data).toBeDefined();
+				expect(parsed.iv).toBeDefined();
+				expect(parsed.salt).toBeDefined();
+			});
+
+			it("should successfully decrypt API keys", async () => {
+				const originalKey = "my-secure-api-key-123";
+				const options: ExtensionOptions = {
+					apiKey: originalKey,
+					modelName: "gemini-2.5-flash-preview-tts",
+					voice: "Aoede",
+					speechStylePrompts: [],
+					defaultPromptId: "documentary",
+				};
+
+				// Store and retrieve
+				await setExtensionOptions(options);
+				const retrieved = await getExtensionOptions();
+
+				expect(retrieved?.apiKey).toBe(originalKey);
+			});
+
+			it("should handle encryption errors gracefully", async () => {
+				// Mock the secureEncrypt function to fail by mocking crypto.subtle.importKey
+				const originalImportKey = crypto.subtle.importKey;
+				crypto.subtle.importKey = vi.fn().mockRejectedValue(new Error("Encryption failed"));
+
+				const options: ExtensionOptions = {
+					apiKey: "test-key",
+					modelName: "gemini-2.5-flash-preview-tts",
+					voice: "Aoede",
+					speechStylePrompts: [],
+					defaultPromptId: "documentary",
+				};
+
+				// Should fall back to unencrypted storage
+				await setExtensionOptions(options);
+				const stored = mockStorageData["extensionOptions"];
+				expect(stored.apiKey).toBe("test-key"); // Should be unencrypted
+
+				// Restore crypto
+				crypto.subtle.importKey = originalImportKey;
+			});
+		});
+	});
+
 	describe("generateFilename function", () => {
 		it("should use article title and domain when both fit within limits", () => {
 			const tabInfo: TabInfo = {
@@ -646,7 +828,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Title with - bad - characters -  -  -  -  -  -  -  - example.com.mp3");
+			expect(filename).toBe("Title with bad characters - example.com.mp3");
 		});
 
 		it("should normalize multiple spaces and separator formatting", () => {
@@ -716,7 +898,7 @@ describe("Storage Functions", () => {
 
 			const filename = generateFilename(tabInfo);
 			// Should not include domain because remaining space would be < 10 chars
-			expect(filename).toBe("This title is exactly sixty - one characters long making it tight.mp3");
+			expect(filename).toBe("This title is exactly sixty-one characters long making it tight.mp3");
 			expect(filename).not.toContain("example.com");
 		});
 
@@ -728,7 +910,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Title - with - existing - separators - example.com.mp3");
+			expect(filename).toBe("Title - with existing separators - example.com.mp3");
 		});
 	});
 });

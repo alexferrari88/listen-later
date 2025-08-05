@@ -254,23 +254,23 @@ export function generateFilename(tabInfo: TabInfo): string {
 		title = tabInfo.domain;
 	}
 
-	// Start building the filename with the title
-	let filename = title;
+	// Sanitize the title first to prevent security issues
+	const sanitizedTitle = sanitizeFilename(title);
+	
+	// Start building the filename with the sanitized title
+	let filename = sanitizedTitle;
 
 	// If there's space left (keeping some buffer for domain), append domain
 	const maxTitleLength = 70; // Leave room for domain and separators
-	if (title.length < maxTitleLength && title !== tabInfo.domain) {
-		const remainingSpace = maxTitleLength - title.length - 3; // 3 chars for " - "
+	if (sanitizedTitle.length < maxTitleLength && sanitizedTitle !== tabInfo.domain) {
+		const remainingSpace = maxTitleLength - sanitizedTitle.length - 3; // 3 chars for " - "
 		if (remainingSpace > 10) { // Only add domain if we have reasonable space
-			filename = `${title} - ${tabInfo.domain}`;
+			filename = `${sanitizedTitle} - ${tabInfo.domain}`;
 		}
 	}
 
-	// Enhanced sanitization to prevent path traversal and handle security issues
-	const sanitized = sanitizeFilename(filename);
-
 	// Truncate if needed while preserving the extension
-	const truncated = sanitized.substring(0, 80); // Max 80 chars for filename part
+	const truncated = filename.substring(0, 80); // Max 80 chars for filename part
 
 	return `${truncated}.mp3`;
 }
@@ -283,39 +283,39 @@ function sanitizeFilename(filename: string): string {
 	// Remove path traversal sequences
 	sanitized = sanitized.replace(/\.\./g, ""); // Remove ..
 	sanitized = sanitized.replace(/\.\//g, ""); // Remove ./
-	sanitized = sanitized.replace(/\\+/g, "-"); // Replace backslashes
-	sanitized = sanitized.replace(/\/+/g, "-"); // Replace forward slashes
+	sanitized = sanitized.replace(/\\+/g, "/"); // Replace backslashes with forward slash first
+	sanitized = sanitized.replace(/\/+/g, "/"); // Consolidate multiple slashes
+	sanitized = sanitized.replace(/\//g, " "); // Replace slashes with spaces
 	
-	// Replace filesystem-incompatible characters
-	sanitized = sanitized.replace(/[<>:"/\\|?*]/g, "-");
-	
-	// Normalize whitespace
-	sanitized = sanitized.replace(/\s+/g, " ");
-	sanitized = sanitized.replace(/\s*-\s*/g, " - ");
+	// Replace filesystem-incompatible characters with spaces
+	sanitized = sanitized.replace(/[<>:"|?*]/g, " ");
 	
 	// Remove leading and trailing dots and spaces
 	sanitized = sanitized.replace(/^[.\s]+|[.\s]+$/g, "");
 	
-	// Handle Windows reserved names (case-insensitive)
-	const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
-	if (reservedNames.test(sanitized)) {
-		sanitized = `file_${sanitized}`;
-	}
+	// Remove any remaining leading dots (hidden files)
+	sanitized = sanitized.replace(/^\.+/, "");
 	
 	// Handle edge cases where sanitization results in empty or invalid names
 	if (!sanitized || sanitized === "." || sanitized === "..") {
 		sanitized = "unnamed_file";
 	}
 	
-	// Remove any remaining leading dots (hidden files)
-	sanitized = sanitized.replace(/^\.+/, "");
-	
 	// Final check - if empty after all sanitization, provide fallback
 	if (!sanitized) {
 		sanitized = "unnamed_file";
 	}
 	
-	return sanitized.trim();
+	// Handle Windows reserved names (case-insensitive) - must be after cleaning
+	const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+	if (reservedNames.test(sanitized)) {
+		sanitized = `file_${sanitized}`;
+	}
+	
+	// Normalize whitespace - collapse multiple spaces and trim
+	sanitized = sanitized.replace(/\s+/g, " ").trim();
+	
+	return sanitized;
 }
 
 export function extractDomain(url: string): string {
