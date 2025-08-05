@@ -20,6 +20,20 @@ const TextPreviewModal: React.FC<TextPreviewModalProps> = ({
 		setEditedText(job.text || "");
 	}, [job.text]);
 
+	useEffect(() => {
+		const handleKeydown = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') {
+				handleCancel();
+			}
+		};
+
+		document.addEventListener('keydown', handleKeydown);
+
+		return () => {
+			document.removeEventListener('keydown', handleKeydown);
+		};
+	}, []);
+
 	const handleConfirm = async () => {
 		if (!editedText.trim()) {
 			return;

@@ -3,6 +3,7 @@ import {
 	sanitizeErrorMessage,
 	createJob,
 	updateJob,
+	removeJob,
 	getJob,
 	canStartNewJob,
 	cleanupOldJobs,
@@ -341,11 +342,8 @@ const handleModalCancelled = withAsyncLogging(async (
 ) => {
 	logger.debug("User cancelled text confirmation from modal", { jobId });
 	
-	// Update job status to error
-	await updateJob(jobId, {
-		status: "error",
-		message: "Text review cancelled by user",
-	});
+	// Remove job completely when cancelled
+	await removeJob(jobId);
 	
 	sendResponse({ success: true });
 }, 'handleModalCancelled');
