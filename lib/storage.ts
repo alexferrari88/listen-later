@@ -183,7 +183,7 @@ export function generateFilename(tabInfo: TabInfo): string {
 		.trim()
 		.substring(0, 80); // Max 80 chars for filename part
 
-	return `${sanitized}.wav`;
+	return `${sanitized}.mp3`;
 }
 
 export function extractDomain(url: string): string {

@@ -1,4 +1,5 @@
-// Remove wav library import (not browser compatible)
+// Import lamejs for MP3 encoding
+import * as lamejs from "lamejs";
 import { logger, withAsyncLogging } from "../lib/logger";
 
 // Browser-compatible base64 conversion helpers
@@ -744,7 +745,7 @@ const downloadAudio = withAsyncLogging(
 			throw new Error(`Job ${jobId} not found`);
 		}
 
-		logger.debug("Converting base64 PCM data to proper WAV file", {
+		logger.debug("Converting base64 PCM data to MP3 file", {
 			jobId,
 			dataLength: base64Data.length,
 			filename: job.filename,
@@ -754,17 +755,17 @@ const downloadAudio = withAsyncLogging(
 		const pcmBuffer = base64ToUint8Array(base64Data);
 		logger.debug("PCM buffer created", { pcmBufferLength: pcmBuffer.length });
 
-		// Create proper WAV file using browser-compatible WAV generation
-		const wavBuffer = await createWavFile(pcmBuffer, {
+		// Create MP3 file using lamejs encoding
+		const mp3Buffer = await createMp3File(pcmBuffer, {
 			channels: 1, // Mono audio
 			sampleRate: 24000, // 24kHz sample rate (Gemini's output)
 			bitDepth: 16, // 16-bit depth
 		});
 
-		// Convert WAV buffer to data URL
-		const dataUrl = `data:audio/wav;base64,${uint8ArrayToBase64(wavBuffer)}`;
-		logger.debug("Proper WAV file created", {
-			wavBufferLength: wavBuffer.length,
+		// Convert MP3 buffer to data URL
+		const dataUrl = `data:audio/mpeg;base64,${uint8ArrayToBase64(mp3Buffer)}`;
+		logger.debug("MP3 file created", {
+			mp3BufferLength: mp3Buffer.length,
 		});
 
 		// Use the filename from the job (already includes smart title/domain logic)
@@ -783,67 +784,56 @@ const downloadAudio = withAsyncLogging(
 	"downloadAudio",
 );
 
-// Browser-compatible helper function to create proper WAV file from PCM data
-const createWavFile = (
+// Browser-compatible helper function to create MP3 file from PCM data using lamejs
+const createMp3File = (
 	pcmData: Uint8Array,
 	options: { channels: number; sampleRate: number; bitDepth: number },
 ): Promise<Uint8Array> => {
 	return new Promise((resolve) => {
-		const { channels, sampleRate, bitDepth } = options;
-		const bytesPerSample = bitDepth / 8;
-		const blockAlign = channels * bytesPerSample;
-		const byteRate = sampleRate * blockAlign;
-		const dataSize = pcmData.length;
-		const fileSize = 36 + dataSize;
-
-		// Create WAV header (44 bytes)
-		const header = new ArrayBuffer(44);
-		const view = new DataView(header);
+		const { channels, sampleRate } = options;
+		
+		// Initialize MP3 encoder (mono, sample rate, 128kbps bitrate)
+		const mp3encoder = new lamejs.Mp3Encoder(channels, sampleRate, 128);
+		
+		// Convert Uint8Array to Int16Array (lamejs expects 16-bit samples)
+		const int16Samples = new Int16Array(pcmData.length / 2);
+		for (let i = 0; i < int16Samples.length; i++) {
+			// Convert two bytes to signed 16-bit integer (little-endian)
+			int16Samples[i] = (pcmData[i * 2 + 1] << 8) | pcmData[i * 2];
+		}
+		
+		// Encode audio in chunks for better performance with large files
+		const mp3Data: Uint8Array[] = [];
+		const chunkSize = 1152; // MP3 frame size
+		
+		for (let i = 0; i < int16Samples.length; i += chunkSize) {
+			const chunk = int16Samples.slice(i, i + chunkSize);
+			const mp3buf = mp3encoder.encodeBuffer(chunk);
+			if (mp3buf.length > 0) {
+				mp3Data.push(mp3buf);
+			}
+		}
+		
+		// Flush the encoder
+		const mp3buf = mp3encoder.flush();
+		if (mp3buf.length > 0) {
+			mp3Data.push(mp3buf);
+		}
+		
+		// Combine all MP3 chunks into single buffer
+		let totalLength = 0;
+		for (const chunk of mp3Data) {
+			totalLength += chunk.length;
+		}
+		
+		const finalMp3Buffer = new Uint8Array(totalLength);
 		let offset = 0;
-
-		// RIFF header
-		const riffBytes = new TextEncoder().encode("RIFF");
-		for (let i = 0; i < 4; i++) view.setUint8(offset + i, riffBytes[i]);
-		offset += 4;
-		view.setUint32(offset, fileSize, true);
-		offset += 4; // Little endian
-		const waveBytes = new TextEncoder().encode("WAVE");
-		for (let i = 0; i < 4; i++) view.setUint8(offset + i, waveBytes[i]);
-		offset += 4;
-
-		// fmt chunk
-		const fmtBytes = new TextEncoder().encode("fmt ");
-		for (let i = 0; i < 4; i++) view.setUint8(offset + i, fmtBytes[i]);
-		offset += 4;
-		view.setUint32(offset, 16, true);
-		offset += 4; // Subchunk1Size (little endian)
-		view.setUint16(offset, 1, true);
-		offset += 2; // AudioFormat (PCM, little endian)
-		view.setUint16(offset, channels, true);
-		offset += 2; // NumChannels (little endian)
-		view.setUint32(offset, sampleRate, true);
-		offset += 4; // SampleRate (little endian)
-		view.setUint32(offset, byteRate, true);
-		offset += 4; // ByteRate (little endian)
-		view.setUint16(offset, blockAlign, true);
-		offset += 2; // BlockAlign (little endian)
-		view.setUint16(offset, bitDepth, true);
-		offset += 2; // BitsPerSample (little endian)
-
-		// data chunk
-		const dataBytes = new TextEncoder().encode("data");
-		for (let i = 0; i < 4; i++) view.setUint8(offset + i, dataBytes[i]);
-		offset += 4;
-		view.setUint32(offset, dataSize, true);
-		offset += 4; // Little endian
-
-		// Concatenate header with PCM data
-		const headerArray = new Uint8Array(header);
-		const wavBuffer = new Uint8Array(headerArray.length + pcmData.length);
-		wavBuffer.set(headerArray, 0);
-		wavBuffer.set(pcmData, headerArray.length);
-
-		resolve(wavBuffer);
+		for (const chunk of mp3Data) {
+			finalMp3Buffer.set(chunk, offset);
+			offset += chunk.length;
+		}
+		
+		resolve(finalMp3Buffer);
 	});
 };
 

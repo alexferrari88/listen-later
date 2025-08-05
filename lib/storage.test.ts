@@ -173,7 +173,7 @@ describe("Storage Functions", () => {
 			const storedOptions: ExtensionOptions = {
 				apiKey: "test-key",
 				modelName: "gemini-2.5-flash-preview-tts",
-				voice: "Kore",
+				voice: "Aoede",
 			};
 			mockStorageData["extensionOptions"] = storedOptions;
 
@@ -210,7 +210,7 @@ describe("Storage Functions", () => {
 			const originalOptions: ExtensionOptions = {
 				apiKey: "test-api-key-12345",
 				modelName: "gemini-2.5-flash-preview-tts",
-				voice: "Kore",
+				voice: "Aoede",
 			};
 
 			// Store the options (this encrypts the API key)
@@ -231,7 +231,7 @@ describe("Storage Functions", () => {
 			expect(defaultOptions).toEqual({
 				apiKey: "",
 				modelName: "gemini-2.5-flash-preview-tts",
-				voice: "Kore",
+				voice: "Aoede",
 			});
 		});
 	});
@@ -246,7 +246,7 @@ describe("Storage Functions", () => {
 			const options: ExtensionOptions = {
 				apiKey: "",
 				modelName: "gemini-2.5-flash-preview-tts",
-				voice: "Kore",
+				voice: "Aoede",
 			};
 			mockStorageData["extensionOptions"] = options;
 
@@ -258,7 +258,7 @@ describe("Storage Functions", () => {
 			const options: ExtensionOptions = {
 				apiKey: "   ",
 				modelName: "gemini-2.5-flash-preview-tts",
-				voice: "Kore",
+				voice: "Aoede",
 			};
 			mockStorageData["extensionOptions"] = options;
 
@@ -270,7 +270,7 @@ describe("Storage Functions", () => {
 			const options: ExtensionOptions = {
 				apiKey: "valid-api-key",
 				modelName: "gemini-2.5-flash-preview-tts",
-				voice: "Kore",
+				voice: "Aoede",
 			};
 			mockStorageData["extensionOptions"] = options;
 
@@ -573,7 +573,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Great Article - example.com.wav");
+			expect(filename).toBe("Great Article - example.com.mp3");
 		});
 
 		it("should use page title and domain when no article title is provided", () => {
@@ -584,7 +584,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Page Title - example.com.wav");
+			expect(filename).toBe("Page Title - example.com.mp3");
 		});
 
 		it("should use only domain when no meaningful title is provided", () => {
@@ -595,7 +595,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("example.com.wav");
+			expect(filename).toBe("example.com.mp3");
 		});
 
 		it("should use only domain when title is only whitespace", () => {
@@ -607,7 +607,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("example.com.wav");
+			expect(filename).toBe("example.com.mp3");
 		});
 
 		it("should truncate long titles to fit within 80 character limit", () => {
@@ -620,8 +620,8 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename.length).toBeLessThanOrEqual(84); // 80 + ".wav"
-			expect(filename).toMatch(/^This is a very long article title that definitely exceeds the.*\.wav$/);
+			expect(filename.length).toBeLessThanOrEqual(84); // 80 + ".mp3"
+			expect(filename).toMatch(/^This is a very long article title that definitely exceeds the.*\.mp3$/);
 		});
 
 		it("should use title only when adding domain would exceed length limit", () => {
@@ -634,7 +634,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe(`${longTitle}.wav`);
+			expect(filename).toBe(`${longTitle}.mp3`);
 			expect(filename).not.toContain("verylongdomainname.com");
 		});
 
@@ -646,7 +646,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Title with - bad - characters -  -  -  -  -  -  -  - example.com.wav");
+			expect(filename).toBe("Title with - bad - characters -  -  -  -  -  -  -  - example.com.mp3");
 		});
 
 		it("should normalize multiple spaces and separator formatting", () => {
@@ -657,7 +657,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Title with multiple spaces - example.com.wav");
+			expect(filename).toBe("Title with multiple spaces - example.com.mp3");
 		});
 
 		it("should handle when title is the same as domain", () => {
@@ -668,7 +668,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("github.com.wav");
+			expect(filename).toBe("github.com.mp3");
 			expect(filename).not.toContain(" - github.com");
 		});
 
@@ -681,7 +681,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Specific Article Title - example.com.wav");
+			expect(filename).toBe("Specific Article Title - example.com.mp3");
 		});
 
 		it("should trim whitespace from titles before processing", () => {
@@ -693,7 +693,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Article Title - example.com.wav");
+			expect(filename).toBe("Article Title - example.com.mp3");
 		});
 
 		it("should handle edge case with very short domain name", () => {
@@ -704,7 +704,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Product Page - a.co.wav");
+			expect(filename).toBe("Product Page - a.co.mp3");
 		});
 
 		it("should skip domain when insufficient space remains", () => {
@@ -716,7 +716,7 @@ describe("Storage Functions", () => {
 
 			const filename = generateFilename(tabInfo);
 			// Should not include domain because remaining space would be < 10 chars
-			expect(filename).toBe("This title is exactly sixty - one characters long making it tight.wav");
+			expect(filename).toBe("This title is exactly sixty - one characters long making it tight.mp3");
 			expect(filename).not.toContain("example.com");
 		});
 
@@ -728,7 +728,7 @@ describe("Storage Functions", () => {
 			};
 
 			const filename = generateFilename(tabInfo);
-			expect(filename).toBe("Title - with - existing - separators - example.com.wav");
+			expect(filename).toBe("Title - with - existing - separators - example.com.mp3");
 		});
 	});
 });
