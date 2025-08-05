@@ -22,7 +22,9 @@ const uint8ArrayToBase64 = (uint8Array: Uint8Array): string => {
 
 import {
 	canStartNewJob,
+	checkRateLimit,
 	cleanupOldJobs,
+	cleanupRateLimitData,
 	createJob,
 	getExtensionOptions,
 	getExtensionState,
@@ -51,12 +53,13 @@ export default defineBackground(() => {
 		}
 	});
 
-	// Periodic cleanup of old jobs
+	// Periodic cleanup of old jobs and rate limit data
 	setInterval(async () => {
 		try {
 			await cleanupOldJobs();
+			await cleanupRateLimitData();
 		} catch (error) {
-			logger.error("Failed to cleanup old jobs", error);
+			logger.error("Failed to cleanup old jobs and rate limit data", error);
 		}
 	}, 60000); // Run every minute
 
@@ -70,10 +73,119 @@ export default defineBackground(() => {
 				frameId: sender.frameId,
 			},
 		});
-		handleMessage(message, sender, sendResponse);
+
+		// Message authentication: verify sender is from extension context
+		if (!isValidMessageSender(sender, message)) {
+			const errorResponse = {
+				success: false,
+				error: "Message rejected: invalid sender context",
+			};
+			logger.warn("Message rejected from invalid sender", {
+				messageType: message.type,
+				sender: {
+					tab: sender.tab?.id,
+					url: sender.tab?.url,
+					frameId: sender.frameId,
+					origin: sender.origin,
+					tlsChannelId: sender.tlsChannelId,
+				},
+			});
+			sendResponse(errorResponse);
+			return false;
+		}
+
+		// Check rate limiting for messages that can trigger heavy operations
+		const rateLimitedMessageTypes = ["START_TTS", "CONTENT_EXTRACTED", "CONTENT_EXTRACTED_FOR_REVIEW"];
+		if (rateLimitedMessageTypes.includes(message.type) && sender.tab) {
+			const origin = sender.tab.url ? new URL(sender.tab.url).origin : "unknown";
+			// Use async/await in handleMessage wrapper to properly handle rate limiting
+			handleMessageWithRateLimit(message, sender, sendResponse, sender.tab.id, origin);
+		} else {
+			// No rate limiting needed for this message type
+			handleMessage(message, sender, sendResponse);
+		}
 		return true; // Keep the message channel open for async responses
 	});
 });
+
+// Message authentication function to validate sender
+const isValidMessageSender = (
+	sender: chrome.runtime.MessageSender,
+	message: any,
+): boolean => {
+	// Allow messages from extension popup, options page, and content scripts
+	// These will not have sender.tab but will be from extension context
+	if (!sender.tab) {
+		// Messages from popup/options will have sender.id matching our extension ID
+		if (sender.id === chrome.runtime.id) {
+			return true;
+		}
+		// Reject messages without tab that aren't from our extension
+		return false;
+	}
+
+	// Messages from content scripts must have valid tab context
+	// Check that the tab exists and sender has proper extension context
+	if (sender.tab && sender.id === chrome.runtime.id) {
+		// Additional validation: content scripts should be injected by us
+		// Verify the message type is one we expect from content scripts
+		const validContentScriptMessages = [
+			"CONTENT_EXTRACTED",
+			"CONTENT_EXTRACTED_FOR_REVIEW", 
+			"MODAL_CONFIRMED",
+			"MODAL_CANCELLED",
+			"CONTENT_ERROR",
+		];
+
+		if (validContentScriptMessages.includes(message.type)) {
+			return true;
+		}
+
+		// Allow START_TTS and CANCEL_JOB from any extension context (popup/content)
+		if (message.type === "START_TTS" || message.type === "CANCEL_JOB") {
+			return true;
+		}
+	}
+
+	// Reject all other messages
+	return false;
+};
+
+// Wrapper function to handle rate limiting before processing messages
+const handleMessageWithRateLimit = withAsyncLogging(
+	async (
+		message: any,
+		sender: chrome.runtime.MessageSender,
+		sendResponse: (response?: any) => void,
+		tabId: number,
+		origin: string,
+	) => {
+		try {
+			const rateLimitResult = await checkRateLimit(tabId, origin);
+			if (!rateLimitResult.allowed) {
+				const errorResponse = {
+					success: false,
+					error: rateLimitResult.error || "Rate limit exceeded",
+				};
+				logger.warn("Message rejected due to rate limiting", {
+					messageType: message.type,
+					tabId,
+					origin,
+				});
+				sendResponse(errorResponse);
+				return;
+			}
+			
+			// Rate limit passed, proceed with message handling
+			handleMessage(message, sender, sendResponse);
+		} catch (error) {
+			logger.error("Rate limit check failed", error);
+			// On rate limit check failure, proceed anyway (fail open)
+			handleMessage(message, sender, sendResponse);
+		}
+	},
+	"handleMessageWithRateLimit",
+);
 
 const handleMessage = withAsyncLogging(
 	async (

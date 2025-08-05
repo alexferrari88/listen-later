@@ -47,10 +47,24 @@ export interface ExtensionOptions {
 	defaultPromptId: string;
 }
 
+// Rate limiting data structures
+export interface RateLimitEntry {
+	tabId: number;
+	origin: string;
+	timestamps: number[]; // Array of request timestamps within the window
+	windowStart: number; // Start of current sliding window
+}
+
+export interface RateLimitStorage {
+	entries: { [key: string]: RateLimitEntry }; // key format: "tabId:origin"
+	lastCleanup: number;
+}
+
 // Storage keys
 const STORAGE_KEYS = {
 	STATE: "extensionState",
 	OPTIONS: "extensionOptions",
+	RATE_LIMITS: "rateLimits",
 } as const;
 
 // Constants
@@ -58,6 +72,11 @@ const MAX_CONCURRENT_JOBS = 3;
 const PREPARING_JOB_CLEANUP_TIME = 10 * 60 * 1000; // 10 minutes in milliseconds
 const SUCCESS_JOB_CLEANUP_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
 const ERROR_JOB_CLEANUP_TIME = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+// Rate limiting constants
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 60 seconds sliding window
+const RATE_LIMIT_MAX_REQUESTS = 5; // Maximum 5 requests per window per tab/origin
+const RATE_LIMIT_CLEANUP_INTERVAL = 5 * 60 * 1000; // Cleanup every 5 minutes
 
 // Helper functions for ExtensionState
 
@@ -106,7 +125,7 @@ export async function getExtensionOptions(): Promise<ExtensionOptions | null> {
 		};
 	}
 
-	// If apiKey looks encrypted (base64 without periods/slashes, different pattern than typical API keys), decrypt it
+	// If apiKey looks encrypted, decrypt it
 	if (
 		options.apiKey &&
 		options.apiKey.length > 10 &&
@@ -114,8 +133,17 @@ export async function getExtensionOptions(): Promise<ExtensionOptions | null> {
 		!options.apiKey.startsWith("AI")
 	) {
 		try {
-			const deviceKey = await getDeviceKey();
-			const decrypted = simpleDecrypt(options.apiKey, deviceKey);
+			// Try new secure decryption first
+			let decrypted: string;
+			try {
+				decrypted = await secureDecrypt(options.apiKey);
+			} catch (error) {
+				// Fall back to legacy decryption for backward compatibility
+				logger.debug("New decryption failed, trying legacy decryption", error);
+				const deviceKey = await getLegacyDeviceKey();
+				decrypted = legacyDecrypt(options.apiKey, deviceKey);
+			}
+			
 			return {
 				...options,
 				apiKey: decrypted,
@@ -136,10 +164,9 @@ export async function setExtensionOptions(
 	// Encrypt the API key before storing
 	if (options.apiKey) {
 		try {
-			const deviceKey = await getDeviceKey();
 			const encryptedOptions = {
 				...options,
-				apiKey: simpleEncrypt(options.apiKey, deviceKey),
+				apiKey: await secureEncrypt(options.apiKey),
 			};
 			await chrome.storage.local.set({
 				[STORAGE_KEYS.OPTIONS]: encryptedOptions,
@@ -239,15 +266,56 @@ export function generateFilename(tabInfo: TabInfo): string {
 		}
 	}
 
-	// Sanitize for filesystem and truncate if needed
-	const sanitized = filename
-		.replace(/[<>:"/\\|?*]/g, "-")
-		.replace(/\s+/g, " ")
-		.replace(/\s*-\s*/g, " - ")
-		.trim()
-		.substring(0, 80); // Max 80 chars for filename part
+	// Enhanced sanitization to prevent path traversal and handle security issues
+	const sanitized = sanitizeFilename(filename);
 
-	return `${sanitized}.mp3`;
+	// Truncate if needed while preserving the extension
+	const truncated = sanitized.substring(0, 80); // Max 80 chars for filename part
+
+	return `${truncated}.mp3`;
+}
+
+// Comprehensive filename sanitization to prevent path traversal and security issues
+function sanitizeFilename(filename: string): string {
+	// Remove null bytes and control characters (0x00-0x1f)
+	let sanitized = filename.replace(/[\x00-\x1f]/g, "");
+	
+	// Remove path traversal sequences
+	sanitized = sanitized.replace(/\.\./g, ""); // Remove ..
+	sanitized = sanitized.replace(/\.\//g, ""); // Remove ./
+	sanitized = sanitized.replace(/\\+/g, "-"); // Replace backslashes
+	sanitized = sanitized.replace(/\/+/g, "-"); // Replace forward slashes
+	
+	// Replace filesystem-incompatible characters
+	sanitized = sanitized.replace(/[<>:"/\\|?*]/g, "-");
+	
+	// Normalize whitespace
+	sanitized = sanitized.replace(/\s+/g, " ");
+	sanitized = sanitized.replace(/\s*-\s*/g, " - ");
+	
+	// Remove leading and trailing dots and spaces
+	sanitized = sanitized.replace(/^[.\s]+|[.\s]+$/g, "");
+	
+	// Handle Windows reserved names (case-insensitive)
+	const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+	if (reservedNames.test(sanitized)) {
+		sanitized = `file_${sanitized}`;
+	}
+	
+	// Handle edge cases where sanitization results in empty or invalid names
+	if (!sanitized || sanitized === "." || sanitized === "..") {
+		sanitized = "unnamed_file";
+	}
+	
+	// Remove any remaining leading dots (hidden files)
+	sanitized = sanitized.replace(/^\.+/, "");
+	
+	// Final check - if empty after all sanitization, provide fallback
+	if (!sanitized) {
+		sanitized = "unnamed_file";
+	}
+	
+	return sanitized.trim();
 }
 
 export function extractDomain(url: string): string {
@@ -542,31 +610,240 @@ export function substituteSpeechStyleTemplate(template: string, content: string)
 	return template.replace(/\$\{content\}/g, content);
 }
 
-// Basic encryption utilities for API key storage
-async function getDeviceKey(): Promise<string> {
-	const userAgent = navigator.userAgent || "test-env";
-	const timestamp = chrome?.runtime?.getManifest?.()?.version || "1.0.0";
-	return btoa(userAgent + timestamp).slice(0, 32);
+// Cryptographically secure encryption utilities for API key storage
+// Uses WebCrypto API with AES-GCM encryption and PBKDF2 key derivation
+
+interface EncryptedData {
+	v: number; // version for future migration support
+	data: string; // base64 encoded encrypted data
+	iv: string; // base64 encoded initialization vector
+	salt: string; // base64 encoded salt
 }
 
-function simpleEncrypt(text: string, key: string): string {
-	return btoa(
-		text
-			.split("")
-			.map((char, i) =>
-				String.fromCharCode(
-					char.charCodeAt(0) ^ key.charCodeAt(i % key.length),
-				),
-			)
-			.join(""),
+// Generate cryptographic key using PBKDF2
+async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+	const encoder = new TextEncoder();
+	const keyMaterial = await crypto.subtle.importKey(
+		"raw",
+		encoder.encode(password),
+		{ name: "PBKDF2" },
+		false,
+		["deriveKey"]
+	);
+	
+	return crypto.subtle.deriveKey(
+		{
+			name: "PBKDF2",
+			salt: salt,
+			iterations: 100000,
+			hash: "SHA-256"
+		},
+		keyMaterial,
+		{ name: "AES-GCM", length: 256 },
+		false,
+		["encrypt", "decrypt"]
 	);
 }
 
-function simpleDecrypt(encrypted: string, key: string): string {
+// Get device-specific password for key derivation
+async function getDevicePassword(): Promise<string> {
+	const userAgent = navigator.userAgent || "test-env";
+	const version = chrome?.runtime?.getManifest?.()?.version || "1.0.0";
+	return `listen-later-${userAgent}-${version}`;
+}
+
+// Encrypt text using AES-GCM
+async function secureEncrypt(text: string): Promise<string> {
+	const encoder = new TextEncoder();
+	const data = encoder.encode(text);
+	
+	// Generate random salt and IV
+	const salt = crypto.getRandomValues(new Uint8Array(16));
+	const iv = crypto.getRandomValues(new Uint8Array(12));
+	
+	// Derive key from device-specific password
+	const password = await getDevicePassword();
+	const key = await deriveKey(password, salt);
+	
+	// Encrypt the data
+	const encrypted = await crypto.subtle.encrypt(
+		{ name: "AES-GCM", iv: iv },
+		key,
+		data
+	);
+	
+	// Package the encrypted data with metadata
+	const result: EncryptedData = {
+		v: 1,
+		data: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
+		iv: btoa(String.fromCharCode(...iv)),
+		salt: btoa(String.fromCharCode(...salt))
+	};
+	
+	return btoa(JSON.stringify(result));
+}
+
+// Decrypt text using AES-GCM
+async function secureDecrypt(encryptedText: string): Promise<string> {
+	try {
+		const parsed: EncryptedData = JSON.parse(atob(encryptedText));
+		
+		// Check version for future migration support
+		if (parsed.v !== 1) {
+			throw new Error(`Unsupported encryption version: ${parsed.v}`);
+		}
+		
+		// Reconstruct binary data from base64
+		const data = new Uint8Array(
+			atob(parsed.data).split('').map(c => c.charCodeAt(0))
+		);
+		const iv = new Uint8Array(
+			atob(parsed.iv).split('').map(c => c.charCodeAt(0))
+		);
+		const salt = new Uint8Array(
+			atob(parsed.salt).split('').map(c => c.charCodeAt(0))
+		);
+		
+		// Derive key from device-specific password
+		const password = await getDevicePassword();
+		const key = await deriveKey(password, salt);
+		
+		// Decrypt the data
+		const decrypted = await crypto.subtle.decrypt(
+			{ name: "AES-GCM", iv: iv },
+			key,
+			data
+		);
+		
+		const decoder = new TextDecoder();
+		return decoder.decode(decrypted);
+	} catch (error) {
+		logger.error("Failed to decrypt data", error);
+		throw new Error("Decryption failed");
+	}
+}
+
+// Legacy XOR decryption for backward compatibility
+function legacyDecrypt(encrypted: string, key: string): string {
 	return atob(encrypted)
 		.split("")
 		.map((char, i) =>
 			String.fromCharCode(char.charCodeAt(0) ^ key.charCodeAt(i % key.length)),
 		)
 		.join("");
+}
+
+// Generate legacy device key for backward compatibility
+async function getLegacyDeviceKey(): Promise<string> {
+	const userAgent = navigator.userAgent || "test-env";
+	const timestamp = chrome?.runtime?.getManifest?.()?.version || "1.0.0";
+	return btoa(userAgent + timestamp).slice(0, 32);
+}
+
+// Rate Limiting Functions
+
+async function getRateLimitStorage(): Promise<RateLimitStorage> {
+	const result = await chrome.storage.local.get(STORAGE_KEYS.RATE_LIMITS);
+	return result[STORAGE_KEYS.RATE_LIMITS] || {
+		entries: {},
+		lastCleanup: Date.now(),
+	};
+}
+
+async function setRateLimitStorage(storage: RateLimitStorage): Promise<void> {
+	await chrome.storage.local.set({ [STORAGE_KEYS.RATE_LIMITS]: storage });
+}
+
+function getRateLimitKey(tabId: number, origin: string): string {
+	return `${tabId}:${origin}`;
+}
+
+export async function checkRateLimit(tabId: number, origin: string): Promise<{ allowed: boolean; error?: string }> {
+	const now = Date.now();
+	const storage = await getRateLimitStorage();
+	const key = getRateLimitKey(tabId, origin);
+	
+	let entry = storage.entries[key];
+	
+	if (!entry) {
+		// First request from this tab/origin
+		entry = {
+			tabId,
+			origin,
+			timestamps: [now],
+			windowStart: now,
+		};
+		storage.entries[key] = entry;
+		await setRateLimitStorage(storage);
+		return { allowed: true };
+	}
+	
+	// Clean up old timestamps outside the sliding window
+	const windowStart = now - RATE_LIMIT_WINDOW_MS;
+	entry.timestamps = entry.timestamps.filter(timestamp => timestamp >= windowStart);
+	entry.windowStart = windowStart;
+	
+	// Check if we're at the limit
+	if (entry.timestamps.length >= RATE_LIMIT_MAX_REQUESTS) {
+		logger.warn("Rate limit exceeded", {
+			tabId,
+			origin,
+			requestCount: entry.timestamps.length,
+			windowMs: RATE_LIMIT_WINDOW_MS,
+			maxRequests: RATE_LIMIT_MAX_REQUESTS,
+		});
+		
+		return {
+			allowed: false,
+			error: `Rate limit exceeded. Maximum ${RATE_LIMIT_MAX_REQUESTS} requests per ${RATE_LIMIT_WINDOW_MS / 1000} seconds. Please wait before trying again.`,
+		};
+	}
+	
+	// Add current request timestamp
+	entry.timestamps.push(now);
+	storage.entries[key] = entry;
+	await setRateLimitStorage(storage);
+	
+	logger.debug("Rate limit check passed", {
+		tabId,
+		origin,
+		requestCount: entry.timestamps.length,
+		maxRequests: RATE_LIMIT_MAX_REQUESTS,
+	});
+	
+	return { allowed: true };
+}
+
+export async function cleanupRateLimitData(): Promise<void> {
+	const now = Date.now();
+	const storage = await getRateLimitStorage();
+	
+	// Only cleanup if it's been more than the cleanup interval since last cleanup
+	if (now - storage.lastCleanup < RATE_LIMIT_CLEANUP_INTERVAL) {
+		return;
+	}
+	
+	const initialEntryCount = Object.keys(storage.entries).length;
+	const cutoffTime = now - (RATE_LIMIT_WINDOW_MS * 2); // Keep data for 2x window duration
+	
+	// Remove entries that are completely expired
+	for (const [key, entry] of Object.entries(storage.entries)) {
+		// Remove entries where all timestamps are older than cutoff
+		entry.timestamps = entry.timestamps.filter(timestamp => timestamp >= cutoffTime);
+		
+		if (entry.timestamps.length === 0) {
+			delete storage.entries[key];
+		}
+	}
+	
+	storage.lastCleanup = now;
+	const finalEntryCount = Object.keys(storage.entries).length;
+	
+	if (initialEntryCount !== finalEntryCount) {
+		await setRateLimitStorage(storage);
+		logger.debug("Cleaned up rate limit data", {
+			removedEntries: initialEntryCount - finalEntryCount,
+			remainingEntries: finalEntryCount,
+		});
+	}
 }
