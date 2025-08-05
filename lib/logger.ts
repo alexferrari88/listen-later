@@ -4,50 +4,50 @@
 const isDev = import.meta.env.MODE === "development";
 
 export const logger = {
-	debug: (message: string, ...args: any[]) => {
+	debug: (message: string, ...args: unknown[]) => {
 		if (isDev) {
 			console.log(`[DEBUG] ${message}`, ...args);
 		}
 	},
 
-	info: (message: string, ...args: any[]) => {
+	info: (message: string, ...args: unknown[]) => {
 		if (isDev) {
 			console.log(`[INFO] ${message}`, ...args);
 		}
 	},
 
-	warn: (message: string, ...args: any[]) => {
+	warn: (message: string, ...args: unknown[]) => {
 		if (isDev) {
 			console.warn(`[WARN] ${message}`, ...args);
 		}
 	},
 
-	error: (message: string, ...args: any[]) => {
+	error: (message: string, ...args: unknown[]) => {
 		// Always log errors, even in production
 		console.error(`[ERROR] ${message}`, ...args);
 	},
 
 	// Specific logging functions for different components
 	background: {
-		message: (type: string, data?: any) => {
+		message: (type: string, data?: unknown) => {
 			if (isDev) {
 				console.log(`[BACKGROUND] Message received: ${type}`, data);
 			}
 		},
 
-		state: (state: any) => {
+		state: (state: unknown) => {
 			if (isDev) {
 				console.log(`[BACKGROUND] State updated:`, state);
 			}
 		},
 
-		api: (endpoint: string, status?: number, data?: any) => {
+		api: (endpoint: string, status?: number, data?: unknown) => {
 			if (isDev) {
 				console.log(`[BACKGROUND] API call: ${endpoint}`, { status, data });
 			}
 		},
 
-		injection: (status: string, details?: any) => {
+		injection: (status: string, details?: unknown) => {
 			if (isDev) {
 				console.log(`[BACKGROUND] Script injection: ${status}`, details);
 			}
@@ -55,13 +55,13 @@ export const logger = {
 	},
 
 	popup: {
-		state: (state: any) => {
+		state: (state: unknown) => {
 			if (isDev) {
 				console.log(`[POPUP] State changed:`, state);
 			}
 		},
 
-		action: (action: string, data?: any) => {
+		action: (action: string, data?: unknown) => {
 			if (isDev) {
 				console.log(`[POPUP] Action: ${action}`, data);
 			}
@@ -69,18 +69,18 @@ export const logger = {
 	},
 
 	content: {
-		extraction: (stage: string, data?: any) => {
+		extraction: (stage: string, data?: unknown) => {
 			if (isDev) {
 				console.log(`[CONTENT] Extraction ${stage}:`, data);
 			}
 		},
 
-		readability: (data: any) => {
+		readability: (data: unknown) => {
 			if (isDev) {
 				console.log(`[CONTENT] Readability result:`, {
-					title: data?.title,
-					length: data?.textContent?.length,
-					hasContent: !!data?.textContent,
+					title: (data as any)?.title,
+					length: (data as any)?.textContent?.length,
+					hasContent: !!(data as any)?.textContent,
 				});
 			}
 		},
@@ -88,7 +88,7 @@ export const logger = {
 };
 
 // Helper to log function entry/exit with timing
-export const withLogging = <T extends any[], R>(
+export const withLogging = <T extends unknown[], R>(
 	fn: (...args: T) => R,
 	name: string,
 	component: "background" | "popup" | "content" = "background",
@@ -119,7 +119,7 @@ export const withLogging = <T extends any[], R>(
 };
 
 // Helper to log async function entry/exit with timing
-export const withAsyncLogging = <T extends any[], R>(
+export const withAsyncLogging = <T extends unknown[], R>(
 	fn: (...args: T) => Promise<R>,
 	name: string,
 	component: "background" | "popup" | "content" = "background",

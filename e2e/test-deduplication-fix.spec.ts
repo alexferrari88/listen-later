@@ -128,7 +128,7 @@ test.describe("Deduplication Fix Validation", () => {
 			for (let j = i + 1; j < lines.length; j++) {
 				if (lines[i] === lines[j]) {
 					duplicates.push({
-						content: lines[i].substring(0, 50) + "...",
+						content: `${lines[i].substring(0, 50)}...`,
 						positions: [i, j],
 					});
 				}

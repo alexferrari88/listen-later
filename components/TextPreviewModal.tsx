@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ProcessingJob } from "../lib/storage";
 
 interface TextPreviewModalProps {
@@ -19,6 +19,10 @@ const TextPreviewModal: React.FC<TextPreviewModalProps> = ({
 	useEffect(() => {
 		setEditedText(job.text || "");
 	}, [job.text]);
+
+	const handleCancel = useCallback(() => {
+		onCancel();
+	}, [onCancel]);
 
 	useEffect(() => {
 		const handleKeydown = (e: KeyboardEvent) => {
@@ -46,10 +50,6 @@ const TextPreviewModal: React.FC<TextPreviewModalProps> = ({
 		}
 	};
 
-	const handleCancel = () => {
-		onCancel();
-	};
-
 	const characterCount = editedText.length;
 	const wordCount = editedText
 		.trim()
@@ -57,16 +57,10 @@ const TextPreviewModal: React.FC<TextPreviewModalProps> = ({
 		.filter((word) => word.length > 0).length;
 
 	return (
-		<div
-			style={overlayStyle}
+		<button
+			style={{ ...overlayStyle, border: "none", padding: 0 }}
 			onClick={handleCancel}
-			onKeyDown={(e) => {
-				if (e.key === "Enter" || e.key === " ") {
-					handleCancel();
-				}
-			}}
-			role="button"
-			tabIndex={0}
+			type="button"
 		>
 			<div
 				style={modalStyle}
@@ -129,7 +123,7 @@ const TextPreviewModal: React.FC<TextPreviewModalProps> = ({
 					</button>
 				</div>
 			</div>
-		</div>
+		</button>
 	);
 };
 
