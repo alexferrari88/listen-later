@@ -140,3 +140,23 @@ These tools extend Claude's capabilities beyond the core development environment
 - Extension auto-reloads during development with `pnpm dev`
 - Background script runs as service worker (Manifest V3)
 - State persistence allows users to close/reopen popup without losing progress
+
+## Common Issues & Debugging
+
+### React JSX Template Literal Syntax Error
+
+**Issue**: Using `${variable}` directly in JSX text content causes React to interpret it as JavaScript template literal syntax, looking for a variable in scope and throwing errors like "An error occurred in the component".
+
+**Example of problematic code**:
+```jsx
+<small>Use ${content} as placeholder</small>  // ❌ React looks for 'content' variable
+```
+
+**Solution**: Escape template literals in JSX using string literals in curly braces:
+```jsx
+<small>Use {'${content}'} as placeholder</small>  // ✅ Renders as literal text
+```
+
+**Root Cause**: JSX interprets `${...}` as JavaScript template literal syntax, not literal text. This commonly occurs when displaying instructions about template variables to users.
+
+**Debugging Pattern**: When React components crash with generic error messages, check for unescaped template literal syntax in JSX text content.
