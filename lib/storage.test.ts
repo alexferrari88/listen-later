@@ -4,12 +4,14 @@ import {
 	cleanupOldJobs,
 	type ExtensionOptions,
 	type ExtensionState,
+	generateFilename,
 	getDefaultExtensionOptions,
 	getExtensionOptions,
 	getExtensionState,
 	resetExtensionState,
 	setExtensionOptions,
 	setExtensionState,
+	type TabInfo,
 } from "./storage";
 
 // Mock chrome.storage.local
@@ -483,6 +485,175 @@ describe("Storage Functions", () => {
 			expect(remainingIds).toContain("new-error");
 			expect(remainingIds).not.toContain("old-success");
 			expect(remainingIds).not.toContain("old-error");
+		});
+	});
+
+	describe("generateFilename function", () => {
+		it("should use article title and domain when both fit within limits", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/article",
+				title: "Page Title",
+				domain: "example.com",
+				articleTitle: "Great Article",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("Great Article - example.com.wav");
+		});
+
+		it("should use page title and domain when no article title is provided", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/page",
+				title: "Page Title",
+				domain: "example.com",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("Page Title - example.com.wav");
+		});
+
+		it("should use only domain when no meaningful title is provided", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/",
+				title: "",
+				domain: "example.com",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("example.com.wav");
+		});
+
+		it("should use only domain when title is only whitespace", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/",
+				title: "   ",
+				domain: "example.com",
+				articleTitle: "  \t  ",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("example.com.wav");
+		});
+
+		it("should truncate long titles to fit within 80 character limit", () => {
+			const longTitle = "This is a very long article title that definitely exceeds the character limit we want to enforce for filenames";
+			const tabInfo: TabInfo = {
+				url: "https://example.com/article",
+				title: "Short Title",
+				domain: "example.com",
+				articleTitle: longTitle,
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename.length).toBeLessThanOrEqual(84); // 80 + ".wav"
+			expect(filename).toMatch(/^This is a very long article title that definitely exceeds the.*\.wav$/);
+		});
+
+		it("should use title only when adding domain would exceed length limit", () => {
+			const longTitle = "This is a moderately long title that fits but leaves no room for domain";
+			const tabInfo: TabInfo = {
+				url: "https://verylongdomainname.com/article",
+				title: "Short Title",
+				domain: "verylongdomainname.com",
+				articleTitle: longTitle,
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe(`${longTitle}.wav`);
+			expect(filename).not.toContain("verylongdomainname.com");
+		});
+
+		it("should sanitize filesystem-incompatible characters", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/article",
+				title: 'Title with <bad>characters:/\\|?*"',
+				domain: "example.com",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("Title with - bad - characters -  -  -  -  -  -  -  - example.com.wav");
+		});
+
+		it("should normalize multiple spaces and separator formatting", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/article",
+				title: "Title   with    multiple   spaces",
+				domain: "example.com",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("Title with multiple spaces - example.com.wav");
+		});
+
+		it("should handle when title is the same as domain", () => {
+			const tabInfo: TabInfo = {
+				url: "https://github.com/",
+				title: "github.com",
+				domain: "github.com",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("github.com.wav");
+			expect(filename).not.toContain(" - github.com");
+		});
+
+		it("should prefer article title over page title", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/article",
+				title: "Generic Page Title",
+				domain: "example.com",
+				articleTitle: "Specific Article Title",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("Specific Article Title - example.com.wav");
+		});
+
+		it("should trim whitespace from titles before processing", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/article",
+				title: "  Page Title  ",
+				domain: "example.com",
+				articleTitle: "  Article Title  ",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("Article Title - example.com.wav");
+		});
+
+		it("should handle edge case with very short domain name", () => {
+			const tabInfo: TabInfo = {
+				url: "https://a.co/item",
+				title: "Product Page",
+				domain: "a.co",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("Product Page - a.co.wav");
+		});
+
+		it("should skip domain when insufficient space remains", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/article",
+				title: "This title is exactly sixty-one characters long making it tight",
+				domain: "example.com",
+			};
+
+			const filename = generateFilename(tabInfo);
+			// Should not include domain because remaining space would be < 10 chars
+			expect(filename).toBe("This title is exactly sixty - one characters long making it tight.wav");
+			expect(filename).not.toContain("example.com");
+		});
+
+		it("should handle complex sanitization with separators", () => {
+			const tabInfo: TabInfo = {
+				url: "https://example.com/article",
+				title: "Title - with: existing/separators",
+				domain: "example.com",
+			};
+
+			const filename = generateFilename(tabInfo);
+			expect(filename).toBe("Title - with - existing - separators - example.com.wav");
 		});
 	});
 });
