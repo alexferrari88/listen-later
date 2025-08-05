@@ -1,13 +1,16 @@
 // Content script for extracting readable content from web pages
 // This content script is injected programmatically by the background script
-// Readability.js is already injected before this script, so window.Readability should be available
+// Uses @mozilla/readability for content extraction and text normalization libraries for TTS preprocessing
 
+import { Readability } from '@mozilla/readability';
+import { EnglishTextNormalizer } from '@shelf/text-normalizer';
+import { toWords } from 'to-words';
+import normalizeText from 'normalize-text';
 import { logger } from '../lib/logger';
 
-// Extend window object to include Readability and currentJobId
+// Extend window object to include currentJobId
 declare global {
 	interface Window {
-		Readability: any;
 		currentJobId?: string;
 	}
 }
@@ -40,12 +43,7 @@ function extractContent() {
 			throw new Error("No job ID provided - content script not properly initialized");
 		}
 
-		// Readability should already be available
-		if (!window.Readability) {
-			logger.error("Readability.js not available");
-			throw new Error("Readability.js not available");
-		}
-		logger.debug("Readability.js is available");
+		logger.debug("Using @mozilla/readability and TTS preprocessing libraries");
 
 		// Create a copy of the document for Readability
 		logger.debug("Cloning document for Readability processing");
@@ -53,7 +51,7 @@ function extractContent() {
 
 		// Create Readability instance
 		logger.debug("Creating Readability instance");
-		const reader = new window.Readability(documentClone, {
+		const reader = new Readability(documentClone as Document, {
 			debug: false, // We'll handle our own logging
 			charThreshold: 500,
 		});
@@ -69,20 +67,61 @@ function extractContent() {
 		});
 
 		if (article && article.textContent) {
-			logger.debug("Processing extracted content");
-			// Clean up the text content while preserving paragraph breaks
-			const cleanText = article.textContent
+			logger.debug("Processing extracted content with TTS preprocessing");
+			
+			// Step 1: Basic text cleanup
+			let processedText = article.textContent
 				.replace(/https?:\/\/[^\s]+/g, "")  // Remove URLs entirely
+				.replace(/[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}/g, "") // Remove email addresses
 				.replace(/\n\s*\n/g, "\n\n")        // Preserve paragraph breaks
 				.replace(/[ \t]+/g, " ")            // Collapse spaces and tabs only
 				.replace(/\n /g, "\n")              // Remove spaces after newlines
 				.replace(/ \n/g, "\n")              // Remove spaces before newlines
-				.trim()
-				.substring(0, 100000); // Limit to ~100k characters (well within 32k token API limit)
+				.trim();
+			
+			// Step 2: Text normalization for TTS
+			try {
+				const textNormalizer = new EnglishTextNormalizer();
+				processedText = textNormalizer.normalize(processedText);
+				logger.debug("Applied English text normalization");
+			} catch (error) {
+				logger.warn("Text normalization failed, continuing without it:", error);
+			}
+			
+			// Step 3: Convert numbers to words for better TTS pronunciation
+			try {
+				const toWordsConverter = new toWords();
+				// Find and convert standalone numbers (basic implementation)
+				processedText = processedText.replace(/\b\d+\b/g, (match) => {
+					const num = parseInt(match, 10);
+					if (num >= 0 && num <= 1000000) { // Reasonable range
+						try {
+							return toWordsConverter.convert(num);
+						} catch {
+							return match; // Keep original if conversion fails
+						}
+					}
+					return match;
+				});
+				logger.debug("Applied number-to-words conversion");
+			} catch (error) {
+				logger.warn("Number conversion failed, continuing without it:", error);
+			}
+			
+			// Step 4: Final text normalization
+			try {
+				processedText = normalizeText(processedText);
+				logger.debug("Applied final text normalization");
+			} catch (error) {
+				logger.warn("Final normalization failed, continuing without it:", error);
+			}
+			
+			// Step 5: Length limiting
+			const cleanText = processedText.substring(0, 100000); // Limit to ~100k characters
 
-			logger.debug("Text processing complete", {
+			logger.debug("TTS text processing complete", {
 				originalLength: article.textContent.length,
-				cleanedLength: cleanText.length,
+				processedLength: cleanText.length,
 				preview: cleanText.substring(0, 100) + '...'
 			});
 

@@ -151,21 +151,8 @@ const handleStartTTS = withAsyncLogging(async (tab: chrome.tabs.Tab | undefined,
 
 	logger.debug("Created job for TTS process", { jobId: job.id, tabId: targetTab.id });
 
-	// Inject Readability.js first, then content script
+	// Inject content script with integrated content extraction libraries
 	try {
-		// Update job status for Readability injection
-		await updateJob(job.id, {
-			message: "Loading page analysis tools...",
-		});
-		
-		logger.background.injection("Starting Readability.js injection", { tabId: targetTab.id, jobId: job.id });
-		// First inject Readability.js into isolated world
-		await chrome.scripting.executeScript({
-			target: { tabId: targetTab.id },
-			files: ["lib/readability.js"],
-		});
-		logger.background.injection("Readability.js injected successfully");
-
 		// Update job status for content script injection
 		await updateJob(job.id, {
 			message: "Analyzing page content...",
