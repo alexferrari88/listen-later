@@ -300,6 +300,9 @@ const handleContentExtracted = withAsyncLogging(
 			message: "Preparing speech generation request...",
 		});
 
+		// Update badge to reflect new processing job
+		await updateExtensionBadge();
+
 		try {
 			await generateSpeechWithTimeout(jobId);
 			sendResponse({ success: true });
@@ -406,6 +409,9 @@ const handleModalConfirmed = withAsyncLogging(
 			progress: 5,
 		});
 
+		// Update badge to reflect new processing job
+		await updateExtensionBadge();
+
 		try {
 			await generateSpeechWithTimeout(jobId);
 			sendResponse({ success: true });
@@ -422,6 +428,9 @@ const handleModalCancelled = withAsyncLogging(
 
 		// Remove job completely when cancelled
 		await removeJob(jobId);
+
+		// Update badge since job was removed
+		await updateExtensionBadge();
 
 		sendResponse({ success: true });
 	},
@@ -474,6 +483,9 @@ const handleContentError = withAsyncLogging(
 			status: "error",
 			message: sanitizedMessage,
 		});
+
+		// Update badge since job is no longer processing
+		await updateExtensionBadge();
 
 		sendResponse({ success: false, error: sanitizedMessage });
 	},
