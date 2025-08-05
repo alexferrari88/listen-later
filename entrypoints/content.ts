@@ -70,9 +70,13 @@ function extractContent() {
 
 		if (article && article.textContent) {
 			logger.debug("Processing extracted content");
-			// Clean up the text content
+			// Clean up the text content while preserving paragraph breaks
 			const cleanText = article.textContent
-				.replace(/\s+/g, " ")
+				.replace(/https?:\/\/[^\s]+/g, "")  // Remove URLs entirely
+				.replace(/\n\s*\n/g, "\n\n")        // Preserve paragraph breaks
+				.replace(/[ \t]+/g, " ")            // Collapse spaces and tabs only
+				.replace(/\n /g, "\n")              // Remove spaces after newlines
+				.replace(/ \n/g, "\n")              // Remove spaces before newlines
 				.trim()
 				.substring(0, 100000); // Limit to ~100k characters (well within 32k token API limit)
 
