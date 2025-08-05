@@ -3,9 +3,6 @@
 // Uses @mozilla/readability for content extraction and text normalization libraries for TTS preprocessing
 
 import { Readability } from '@mozilla/readability';
-import { EnglishTextNormalizer } from '@shelf/text-normalizer';
-import { toWords } from 'to-words';
-import normalizeText from 'normalize-text';
 import { logger } from '../lib/logger';
 
 // Extend window object to include currentJobId
@@ -67,61 +64,40 @@ function extractContent() {
 		});
 
 		if (article && article.textContent) {
-			logger.debug("Processing extracted content with TTS preprocessing");
+			logger.debug("Processing extracted content - removing UI elements");
 			
-			// Step 1: Basic text cleanup
-			let processedText = article.textContent
-				.replace(/https?:\/\/[^\s]+/g, "")  // Remove URLs entirely
-				.replace(/[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}/g, "") // Remove email addresses
-				.replace(/\n\s*\n/g, "\n\n")        // Preserve paragraph breaks
-				.replace(/[ \t]+/g, " ")            // Collapse spaces and tabs only
-				.replace(/\n /g, "\n")              // Remove spaces after newlines
-				.replace(/ \n/g, "\n")              // Remove spaces before newlines
-				.trim();
-			
-			// Step 2: Text normalization for TTS
-			try {
-				const textNormalizer = new EnglishTextNormalizer();
-				processedText = textNormalizer.normalize(processedText);
-				logger.debug("Applied English text normalization");
-			} catch (error) {
-				logger.warn("Text normalization failed, continuing without it:", error);
-			}
-			
-			// Step 3: Convert numbers to words for better TTS pronunciation
-			try {
-				const toWordsConverter = new toWords();
-				// Find and convert standalone numbers (basic implementation)
-				processedText = processedText.replace(/\b\d+\b/g, (match) => {
-					const num = parseInt(match, 10);
-					if (num >= 0 && num <= 1000000) { // Reasonable range
-						try {
-							return toWordsConverter.convert(num);
-						} catch {
-							return match; // Keep original if conversion fails
-						}
-					}
-					return match;
-				});
-				logger.debug("Applied number-to-words conversion");
-			} catch (error) {
-				logger.warn("Number conversion failed, continuing without it:", error);
-			}
-			
-			// Step 4: Final text normalization
-			try {
-				processedText = normalizeText(processedText);
-				logger.debug("Applied final text normalization");
-			} catch (error) {
-				logger.warn("Final normalization failed, continuing without it:", error);
-			}
-			
-			// Step 5: Length limiting
-			const cleanText = processedText.substring(0, 100000); // Limit to ~100k characters
+			// Clean up UI elements while preserving text structure for TTS
+			const cleanText = article.textContent
+				// Remove URLs and email addresses
+				.replace(/https?:\/\/[^\s]+/g, "")
+				.replace(/[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}/g, "")
+				
+				// Remove common social sharing text
+				.replace(/\b(share on|tweet this|like this|follow us)\b[^\n.]*/gi, "")
+				.replace(/\b(facebook|twitter|instagram|linkedin|pinterest)\b[^\n.]*/gi, "")
+				
+				// Remove navigation elements  
+				.replace(/^(home|about|contact|menu|search|login|register)([|\s]+\w+)*$/gim, "")
+				.replace(/\b(previous|next|page \d+( of \d+)?|more\.\.\.)\b[^\n.]*/gi, "")
+				
+				// Remove author/date metadata patterns
+				.replace(/^(by |author:|published|updated|posted|written by)[^\n]*/gim, "")
+				.replace(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}[^\n]*/gim, "")
+				
+				// Remove very short lines that are likely UI fragments (< 4 words)
+				.replace(/^\s*\w+\s*\w*\s*\w*\s*$/gim, "")
+				
+				// Clean up whitespace while preserving paragraph structure
+				.replace(/\n\s*\n\s*\n+/g, "\n\n")  // Multiple line breaks to double
+				.replace(/[ \t]+/g, " ")              // Collapse spaces and tabs
+				.replace(/\n /g, "\n")                // Remove spaces after newlines
+				.replace(/ \n/g, "\n")                // Remove spaces before newlines
+				.trim()
+				.substring(0, 100000); // Limit to ~100k characters
 
-			logger.debug("TTS text processing complete", {
+			logger.debug("UI cleanup complete, text structure preserved", {
 				originalLength: article.textContent.length,
-				processedLength: cleanText.length,
+				cleanedLength: cleanText.length,
 				preview: cleanText.substring(0, 100) + '...'
 			});
 

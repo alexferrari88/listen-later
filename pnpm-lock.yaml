@@ -11,21 +11,12 @@ importers:
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
-      '@shelf/text-normalizer':
-        specifier: ^2.0.1
-        version: 2.0.1
-      normalize-text:
-        specifier: ^2.6.0
-        version: 2.6.0
       react:
         specifier: ^19.1.1
         version: 19.1.1
       react-dom:
         specifier: ^19.1.1
         version: 19.1.1(react@19.1.1)
-      to-words:
-        specifier: ^4.7.0
-        version: 4.7.0
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.1.3
@@ -225,9 +216,6 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
-
-  '@bitty/pipe@0.3.0':
-    resolution: {integrity: sha512-Ft4tmMM8vfuQOD3jpmvCYPEXoLhWLXWh/Mkeql09d3+9FFMaQBdFdo8GBmhQ01z+D6P3NkqNq02rbb4oBkhjLw==}
 
   '@csstools/color-helpers@5.0.2':
     resolution: {integrity: sha512-JqWH1vsgdGcw2RR6VliXXdA0/59LttzlU8UlRT/iUUsEeWfYq8I+K0yhihEUTTHLRm1EXvpsCx3083EU15ecsA==}
@@ -585,10 +573,6 @@ packages:
     resolution: {integrity: sha512-CvUo2ixeIQGtF6WvuB87XWqPQkoFAFqW+HUo/WzHwuHDvIwZCtjdWXoYCcr06iKGydiqTclC4jU/TNObC/xKZg==}
     cpu: [x64]
     os: [win32]
-
-  '@shelf/text-normalizer@2.0.1':
-    resolution: {integrity: sha512-raNAh8cJXBQNCEHV5Ak6+XNLHLGxXJR3a/AQj3xSRxTdtsV78v4zHwyDkz+/VhF4erCb57lC18g2zE9TF32png==}
-    engines: {node: '>=20'}
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -1200,9 +1184,6 @@ packages:
     resolution: {integrity: sha512-8e1++BCiTzUno9v5IZ2J6bv4RU+3UKDmqWUQD0MIMVCd9AdhWkO1gw57oo1mNEX1dMq2EGI+FbWz4B92pscSQg==}
     engines: {node: '>= 18'}
 
-  fraction.js@4.3.7:
-    resolution: {integrity: sha512-ZsDfxO51wGAXREY55a7la9LScWpwv9RxIrYABrlvOFBlH/ShPnrtsXeuUIfXKKOVicNxQ+o8JTbJvjS4M89yew==}
-
   fs-extra@11.3.0:
     resolution: {integrity: sha512-Z4XaCL6dUDHfP/jT25jJKMmtxvuwbkrD1vNSMFlo9lNLY2c5FHYSQgHPRZUjAB26TpDEoW9HCOgplrdbaPV/ew==}
     engines: {node: '>=14.14'}
@@ -1609,10 +1590,6 @@ packages:
   mlly@1.7.4:
     resolution: {integrity: sha512-qmdSIPC4bDJXgZTCR7XosJiNKySV7O215tsPtDN9iEO/7q/76b/ijtgRu/+epFXSJhijtTCCGp3DWS549P3xKw==}
 
-  modern-diacritics@2.3.1:
-    resolution: {integrity: sha512-jOI0qtelWfGZ4HTB/7pKTOzAA5miXgfbMl0RYirYA5CRuNY4JYTXER+BUiH9JCxqX1gIHs6GaVTwFhvUV8MPWg==}
-    engines: {node: ^14 || >=16}
-
   mrmime@2.0.1:
     resolution: {integrity: sha512-Y3wQdFg2Va6etvQ5I82yUhGdsKrcYox6p7FfL1LbK2J4V01F9TGlepTIhnK24t7koZibmg82KGglhA1XK5IsLQ==}
     engines: {node: '>=10'}
@@ -1652,9 +1629,6 @@ packages:
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
     engines: {node: '>=0.10.0'}
-
-  normalize-text@2.6.0:
-    resolution: {integrity: sha512-/nNYxjIiJFatuDBPeYxrLH3GWw4y6jyplxkP3YEiwXtEYkbC6xvMMvjy+Y9wvlij4BrsTPGb+qUefphcnAfaKQ==}
 
   npm-run-path@4.0.1:
     resolution: {integrity: sha512-S48WzZW777zhNIrn7gxOlISNAqi9ZC/uQFnRdbeIHhZhCA6UqpkOT8T1G7BvfdgP4Er8gF4sUbaS0i7QvIfCWw==}
@@ -2173,10 +2147,6 @@ packages:
   to-regex-range@5.0.1:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
-
-  to-words@4.7.0:
-    resolution: {integrity: sha512-A113L8FrmpHBTbH2Y/c7phYTpeVWYadbXFCAGrc4pnxGzC+x14ju44UO0+8HMJA9SlsuV2dS6UzrHT236SJenw==}
-    engines: {node: '>=12.0.0'}
 
   totalist@3.0.1:
     resolution: {integrity: sha512-sf4i37nQ2LBx4m3wB74y+ubopq6W/dIzXg0FDGjsYnZHVa1Da8FH853wlL2gtUhg+xJXjfk3kUZS3BRoQeoQBQ==}
@@ -2703,8 +2673,6 @@ snapshots:
   '@biomejs/cli-win32-x64@2.1.3':
     optional: true
 
-  '@bitty/pipe@0.3.0': {}
-
   '@csstools/color-helpers@5.0.2': {}
 
   '@csstools/css-calc@2.1.4(@csstools/css-parser-algorithms@3.0.5(@csstools/css-tokenizer@3.0.4))(@csstools/css-tokenizer@3.0.4)':
@@ -2932,11 +2900,6 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.46.2':
     optional: true
-
-  '@shelf/text-normalizer@2.0.1':
-    dependencies:
-      fraction.js: 4.3.7
-      modern-diacritics: 2.3.1
 
   '@types/babel__core@7.20.5':
     dependencies:
@@ -3596,8 +3559,6 @@ snapshots:
 
   formdata-node@6.0.3: {}
 
-  fraction.js@4.3.7: {}
-
   fs-extra@11.3.0:
     dependencies:
       graceful-fs: 4.2.11
@@ -3970,8 +3931,6 @@ snapshots:
       pkg-types: 1.3.1
       ufo: 1.6.1
 
-  modern-diacritics@2.3.1: {}
-
   mrmime@2.0.1: {}
 
   ms@2.1.3: {}
@@ -4009,10 +3968,6 @@ snapshots:
   node-releases@2.0.19: {}
 
   normalize-path@3.0.0: {}
-
-  normalize-text@2.6.0:
-    dependencies:
-      '@bitty/pipe': 0.3.0
 
   npm-run-path@4.0.1:
     dependencies:
@@ -4553,8 +4508,6 @@ snapshots:
   to-regex-range@5.0.1:
     dependencies:
       is-number: 7.0.0
-
-  to-words@4.7.0: {}
 
   totalist@3.0.1: {}
 

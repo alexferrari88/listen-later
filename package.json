@@ -38,10 +38,7 @@
 	},
 	"dependencies": {
 		"@mozilla/readability": "^0.6.0",
-		"@shelf/text-normalizer": "^2.0.1",
-		"normalize-text": "^2.6.0",
 		"react": "^19.1.1",
-		"react-dom": "^19.1.1",
-		"to-words": "^4.7.0"
+		"react-dom": "^19.1.1"
 	}
 }
