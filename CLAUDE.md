@@ -42,7 +42,9 @@ The extension uses a "background-first" architecture where:
 - **Background script** (`entrypoints/background.ts`) is the core coordinator
 - **Popup** (`components/Popup.tsx`) is a reactive view that reflects background state
 - **Content script** (`entrypoints/content.ts`) handles DOM text extraction
+- **Modal content script** (`entrypoints/modal-content.ts`) provides in-page text preview modal
 - **Options page** (`components/Options.tsx`) manages user configuration
+- **Text preview modal** (`components/TextPreviewModal.tsx`) React component for text editing
 
 ### State Management
 - Single source of truth: `chrome.storage.local`
@@ -98,7 +100,7 @@ interface ExtensionOptions {
 - Uses Google Gemini API with multimodal audio generation
 - API endpoint: `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`
 - Requests audio response using `responseModalities: ["AUDIO"]`
-- Returns base64-encoded audio data that gets converted to downloadable WAV file
+- Returns base64-encoded PCM audio data that gets converted to downloadable MP3 file using lamejs encoding
 
 ### Security
 - API keys stored in `chrome.storage.local` (sandboxed to extension)
@@ -120,8 +122,8 @@ interface ExtensionOptions {
 ## File Structure Notes
 
 - `entrypoints/` - WXT convention for extension entry points
-- `components/` - React components (Popup, Options)
-- `lib/` - Utilities (storage helpers, readability.js)
+- `components/` - React components (Popup, Options, TextPreviewModal)
+- `lib/` - Utilities (storage helpers, logger)
 - `public/` - Static assets (icons)
 - `.output/chrome-mv3/` - Built extension files for Chrome
 

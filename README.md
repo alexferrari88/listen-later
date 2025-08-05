@@ -68,16 +68,21 @@ pnpm build
 - `pnpm dev:firefox` - Start development server for Firefox
 - `pnpm build` - Build production version
 - `pnpm build:firefox` - Build for Firefox
-- `pnpm test` - Run unit tests
-- `pnpm test:ui` - Run tests with UI
-- `pnpm e2e` - Run end-to-end tests
-- `pnpm zip` - Create distribution ZIP file
+- `pnpm test` - Run unit tests with Vitest
+- `pnpm test:ui` - Run tests with Vitest UI
+- `pnpm test:run` - Run tests once without watch mode
+- `pnpm e2e` - Run Playwright end-to-end tests
+- `pnpm e2e:headed` - Run E2E tests with browser UI
+- `pnpm e2e:debug` - Run E2E tests in debug mode
+- `pnpm clean` - Remove build output directory
+- `pnpm zip` - Create distribution ZIP for Chrome Web Store
+- `pnpm zip:firefox` - Create distribution ZIP for Firefox Add-ons
 
 ### Technology Stack
 
 - **Framework**: [WXT](https://wxt.dev/) - Modern web extension framework
 - **Language**: TypeScript
-- **UI**: React
+- **UI**: React 19
 - **Linting/Formatting**: Biome
 - **Unit Testing**: Vitest
 - **E2E Testing**: Playwright
