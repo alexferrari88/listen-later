@@ -290,36 +290,23 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 }, 'generateSpeech');
 
 const downloadAudio = withAsyncLogging(async (base64Data: string) => {
-	logger.debug("Converting base64 to binary", { dataLength: base64Data.length });
+	logger.debug("Converting base64 to data URL", { dataLength: base64Data.length });
 	
-	// Decode base64 to binary
-	const binaryString = atob(base64Data);
-	const bytes = new Uint8Array(binaryString.length);
-	for (let i = 0; i < binaryString.length; i++) {
-		bytes[i] = binaryString.charCodeAt(i);
-	}
-	logger.debug("Binary conversion complete", { byteLength: bytes.length });
-
-	// Create blob and object URL
-	const blob = new Blob([bytes], { type: "audio/wav" });
-	const url = URL.createObjectURL(blob);
-	logger.debug("Blob created", { size: blob.size, type: blob.type });
+	// Create data URL directly from base64 data
+	const dataUrl = `data:audio/wav;base64,${base64Data}`;
+	logger.debug("Data URL created");
 
 	// Generate filename with timestamp
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 	const filename = `listen-later-${timestamp}.wav`;
 	logger.debug("Generated filename", { filename });
 
-	// Download using chrome.downloads API
-	logger.debug("Starting download", { filename, url });
+	// Download using chrome.downloads API with data URL
+	logger.debug("Starting download", { filename });
 	const downloadId = await chrome.downloads.download({
-		url: url,
+		url: dataUrl,
 		filename: filename,
 		saveAs: false,
 	});
 	logger.debug("Download initiated", { downloadId });
-
-	// Clean up object URL
-	URL.revokeObjectURL(url);
-	logger.debug("Object URL cleaned up");
 }, 'downloadAudio');
