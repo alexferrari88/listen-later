@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Listen Later is a Chrome extension that converts web articles to speech using Google Gemini API. It uses a background-first architecture where the background script manages state and coordinates between the popup UI, content scripts, and API calls.
 
+### Project Maturity & Scope
+
+This is a personal hobby project in MVP (Minimum Viable Product) stage. Development prioritizes simplicity and functionality over enterprise-grade practices. Features are implemented with a "get it working" mindset rather than production-scale architecture. This context should guide all development decisions toward pragmatic, straightforward solutions.
+
 ## Development Commands
 
 ### Core Development
