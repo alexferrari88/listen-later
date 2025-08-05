@@ -75,7 +75,7 @@ const handleStartTTS = withAsyncLogging(async (sendResponse: (response?: any) =>
 	// Update state to processing
 	const initialState = {
 		status: "processing" as const,
-		message: "Starting content extraction...",
+		message: "Initializing content extraction...",
 	};
 	logger.background.state(initialState);
 	await setExtensionState(initialState);
@@ -95,6 +95,12 @@ const handleStartTTS = withAsyncLogging(async (sendResponse: (response?: any) =>
 
 	// Inject Readability.js first, then content script
 	try {
+		// Update status for Readability injection
+		await setExtensionState({
+			status: "processing",
+			message: "Loading page analysis tools...",
+		});
+		
 		logger.background.injection("Starting Readability.js injection", { tabId: tab.id });
 		// First inject Readability.js into isolated world
 		await chrome.scripting.executeScript({
@@ -102,6 +108,12 @@ const handleStartTTS = withAsyncLogging(async (sendResponse: (response?: any) =>
 			files: ["lib/readability.js"],
 		});
 		logger.background.injection("Readability.js injected successfully");
+
+		// Update status for content script injection
+		await setExtensionState({
+			status: "processing",
+			message: "Analyzing page content...",
+		});
 
 		logger.background.injection("Starting content script injection", { tabId: tab.id });
 		// Then inject content script (which can now use Readability and Chrome APIs)
@@ -131,7 +143,7 @@ const handleContentExtracted = withAsyncLogging(async (
 	
 	const processingState = {
 		status: "processing" as const,
-		message: "Generating speech...",
+		message: "Preparing speech generation request...",
 	};
 	logger.background.state(processingState);
 	await setExtensionState(processingState);
@@ -178,6 +190,12 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 		);
 	}
 
+	// Update status for API call
+	await setExtensionState({
+		status: "processing",
+		message: "Sending text to AI for speech generation...",
+	});
+
 	// Make API call to Gemini
 	const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${options.modelName}:generateContent`;
 	logger.background.api(endpoint, undefined, {
@@ -208,6 +226,12 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 		},
 	};
 	logger.debug("Sending API request", { endpoint, requestBody });
+	
+	// Update status during API call
+	await setExtensionState({
+		status: "processing",
+		message: "AI is generating speech - this may take 30-60 seconds...",
+	});
 	
 	const response = await fetch(endpoint, {
 		method: "POST",
@@ -248,6 +272,13 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 
 	// Convert base64 to blob and download
 	logger.debug("Starting audio download", { audioDataLength: audioData.length });
+	
+	// Update status for download
+	await setExtensionState({
+		status: "processing",
+		message: "Preparing audio file for download...",
+	});
+	
 	await downloadAudio(audioData);
 
 	const successState = {

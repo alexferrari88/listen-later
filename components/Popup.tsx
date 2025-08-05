@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
 	areOptionsConfigured,
 	type ExtensionState,
@@ -12,6 +12,10 @@ const Popup: React.FC = () => {
 	const [state, setState] = useState<ExtensionState>({ status: "idle" });
 	const [isOptionsConfigured, setIsOptionsConfigured] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
+	const [elapsedTime, setElapsedTime] = useState(0);
+	const [processingStage, setProcessingStage] = useState<string>("");
+	const intervalRef = useRef<NodeJS.Timeout | null>(null);
+	const startTimeRef = useRef<number | null>(null);
 
 	// Load initial state and check if options are configured
 	useEffect(() => {
@@ -60,6 +64,49 @@ const Popup: React.FC = () => {
 		return () => chrome.storage.onChanged.removeListener(handleStorageChange);
 	}, []);
 
+	// Timer effect for processing state
+	useEffect(() => {
+		if (state.status === "processing") {
+			// Start timer
+			startTimeRef.current = Date.now();
+			setElapsedTime(0);
+			
+			// Update processing stage based on message
+			const message = state.message || "";
+			if (message.includes("extraction") || message.includes("Analyzing") || message.includes("Loading")) {
+				setProcessingStage("Extracting content");
+			} else if (message.includes("speech") || message.includes("AI") || message.includes("generating")) {
+				setProcessingStage("Generating speech");
+			} else if (message.includes("download") || message.includes("Preparing audio")) {
+				setProcessingStage("Finalizing");
+			} else {
+				setProcessingStage("Processing");
+			}
+			
+			intervalRef.current = setInterval(() => {
+				if (startTimeRef.current) {
+					const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+					setElapsedTime(elapsed);
+				}
+			}, 1000);
+		} else {
+			// Clear timer
+			if (intervalRef.current) {
+				clearInterval(intervalRef.current);
+				intervalRef.current = null;
+			}
+			startTimeRef.current = null;
+			setElapsedTime(0);
+			setProcessingStage("");
+		}
+
+		return () => {
+			if (intervalRef.current) {
+				clearInterval(intervalRef.current);
+			}
+		};
+	}, [state.status, state.message]);
+
 	const handleGenerateClick = async () => {
 		try {
 			logger.popup.action("Generate speech button clicked");
@@ -78,6 +125,25 @@ const Popup: React.FC = () => {
 		} catch (error) {
 			logger.error("Failed to reset state:", error);
 		}
+	};
+
+	const handleCancel = async () => {
+		try {
+			logger.popup.action("Cancel button clicked");
+			await resetExtensionState();
+			logger.debug("Processing cancelled successfully");
+		} catch (error) {
+			logger.error("Failed to cancel processing:", error);
+		}
+	};
+
+	const formatElapsedTime = (seconds: number): string => {
+		if (seconds < 60) {
+			return `${seconds}s`;
+		}
+		const minutes = Math.floor(seconds / 60);
+		const remainingSeconds = seconds % 60;
+		return `${minutes}m ${remainingSeconds}s`;
 	};
 
 	const openOptionsPage = () => {
@@ -149,6 +215,9 @@ const Popup: React.FC = () => {
 
 	// Processing state
 	if (state.status === "processing") {
+		const isLongRunning = elapsedTime > 10;
+		const estimatedTime = processingStage.includes("speech") ? "30-60s" : "5-10s";
+		
 		return (
 			<div style={containerStyle}>
 				<div style={headerStyle}>
@@ -156,11 +225,79 @@ const Popup: React.FC = () => {
 				</div>
 				<div style={contentStyle}>
 					<div style={processingStyle}>
-						<div style={spinnerStyle}>🔄</div>
-						<p style={{ margin: "15px 0 10px 0" }}>Processing...</p>
-						<p style={{ margin: "0", fontSize: "14px", color: "#666" }}>
-							{state.message || "Converting page content to speech"}
+						{/* Animated loading indicator */}
+						<div style={loadingIndicatorStyle}>
+							<div style={modernSpinnerStyle}></div>
+						</div>
+						
+						{/* Stage indicator */}
+						<div style={stageIndicatorStyle}>
+							<div style={stageProgressStyle}>
+								<div 
+									style={{
+										...stageStepStyle, 
+										...(processingStage.includes("content") ? activeStageStyle : {}),
+										...(processingStage.includes("speech") || processingStage.includes("Finalizing") ? { backgroundColor: "#4caf50", border: "2px solid #4caf50", color: "white" } : {})
+									}}
+								>
+									1
+								</div>
+								<div style={stageLineStyle}></div>
+								<div 
+									style={{
+										...stageStepStyle, 
+										...(processingStage.includes("speech") ? activeStageStyle : {}),
+										...(processingStage.includes("Finalizing") ? { backgroundColor: "#4caf50", border: "2px solid #4caf50", color: "white" } : {})
+									}}
+								>
+									2
+								</div>
+								<div style={stageLineStyle}></div>
+								<div 
+									style={{
+										...stageStepStyle, 
+										...(processingStage.includes("Finalizing") ? activeStageStyle : {})
+									}}
+								>
+									3
+								</div>
+							</div>
+							<div style={stageLabelStyle}>
+								<span style={stageLabelTextStyle}>Extract</span>
+								<span style={stageLabelTextStyle}>Generate</span>
+								<span style={stageLabelTextStyle}>Download</span>
+							</div>
+						</div>
+						
+						{/* Status text */}
+						<p style={processingTitleStyle}>{processingStage}</p>
+						<p style={processingSubtitleStyle}>
+							{state.message || "This may take a moment..."}
 						</p>
+						
+						{/* Time and progress info */}
+						<div style={timeInfoStyle}>
+							<div style={timeElapsedStyle}>
+								Time elapsed: {formatElapsedTime(elapsedTime)}
+							</div>
+							{!isLongRunning && (
+								<div style={estimateStyle}>
+									Estimated: {estimatedTime}
+								</div>
+							)}
+							{isLongRunning && (
+								<div style={longRunningStyle}>
+									⏳ AI processing takes time - please wait
+								</div>
+							)}
+						</div>
+						
+						{/* Cancel button */}
+						<div style={{ marginTop: "20px" }}>
+							<button onClick={handleCancel} style={cancelButtonStyle}>
+								Cancel
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -286,5 +423,139 @@ const spinnerStyle: React.CSSProperties = {
 	fontSize: "24px",
 	animation: "spin 1s linear infinite",
 };
+
+// New improved processing styles
+const loadingIndicatorStyle: React.CSSProperties = {
+	marginBottom: "20px",
+};
+
+const modernSpinnerStyle: React.CSSProperties = {
+	width: "40px",
+	height: "40px",
+	border: "4px solid #e3e3e3",
+	borderTop: "4px solid #4285f4",
+	borderRadius: "50%",
+	animation: "spin 1s linear infinite",
+	margin: "0 auto",
+};
+
+const stageIndicatorStyle: React.CSSProperties = {
+	marginBottom: "20px",
+};
+
+const stageProgressStyle: React.CSSProperties = {
+	display: "flex",
+	alignItems: "center",
+	justifyContent: "center",
+	gap: "0",
+};
+
+const stageStepStyle: React.CSSProperties = {
+	width: "30px",
+	height: "30px",
+	borderRadius: "50%",
+	border: "2px solid #e0e0e0",
+	backgroundColor: "#f5f5f5",
+	color: "#999",
+	display: "flex",
+	alignItems: "center",
+	justifyContent: "center",
+	fontSize: "14px",
+	fontWeight: "500",
+};
+
+const activeStageStyle: React.CSSProperties = {
+	border: "2px solid #4285f4",
+	backgroundColor: "#4285f4",
+	color: "white",
+	animation: "pulse 2s infinite",
+};
+
+const stageLineStyle: React.CSSProperties = {
+	width: "40px",
+	height: "2px",
+	backgroundColor: "#e0e0e0",
+};
+
+const processingTitleStyle: React.CSSProperties = {
+	margin: "0 0 8px 0",
+	fontSize: "16px",
+	fontWeight: "500",
+	color: "#4285f4",
+};
+
+const processingSubtitleStyle: React.CSSProperties = {
+	margin: "0 0 15px 0",
+	fontSize: "14px",
+	color: "#666",
+};
+
+const timeInfoStyle: React.CSSProperties = {
+	backgroundColor: "#f8f9fa",
+	padding: "12px",
+	borderRadius: "8px",
+	border: "1px solid #e0e0e0",
+};
+
+const timeElapsedStyle: React.CSSProperties = {
+	fontSize: "14px",
+	color: "#333",
+	fontWeight: "500",
+	marginBottom: "4px",
+};
+
+const estimateStyle: React.CSSProperties = {
+	fontSize: "12px",
+	color: "#666",
+};
+
+const longRunningStyle: React.CSSProperties = {
+	fontSize: "12px",
+	color: "#ea8600",
+	fontStyle: "italic",
+};
+
+const cancelButtonStyle: React.CSSProperties = {
+	padding: "8px 16px",
+	backgroundColor: "transparent",
+	color: "#666",
+	border: "1px solid #ccc",
+	borderRadius: "4px",
+	fontSize: "14px",
+	cursor: "pointer",
+	fontWeight: "400",
+};
+
+const stageLabelStyle: React.CSSProperties = {
+	display: "flex",
+	justifyContent: "space-between",
+	marginTop: "8px",
+	padding: "0 15px",
+};
+
+const stageLabelTextStyle: React.CSSProperties = {
+	fontSize: "11px",
+	color: "#666",
+	fontWeight: "500",
+};
+
+// Add CSS animations
+const styleSheet = document.createElement("style");
+styleSheet.textContent = `
+	@keyframes spin {
+		0% { transform: rotate(0deg); }
+		100% { transform: rotate(360deg); }
+	}
+	
+	@keyframes pulse {
+		0% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.7); }
+		70% { box-shadow: 0 0 0 10px rgba(66, 133, 244, 0); }
+		100% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0); }
+	}
+`;
+if (!document.head.querySelector('style[data-listen-later="animations"]')) {
+	styleSheet.setAttribute('data-listen-later', 'animations');
+	document.head.appendChild(styleSheet);
+}
 
 export default Popup;
