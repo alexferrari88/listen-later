@@ -1,4 +1,4 @@
-import * as wav from "wav";
+// Remove wav library import (not browser compatible)
 import { logger, withAsyncLogging } from "../lib/logger";
 import {
 	canStartNewJob,
@@ -742,38 +742,45 @@ const downloadAudio = withAsyncLogging(
 	"downloadAudio",
 );
 
-// Helper function to create proper WAV file from PCM data
+// Browser-compatible helper function to create proper WAV file from PCM data
 const createWavFile = (
 	pcmData: Buffer,
 	options: { channels: number; sampleRate: number; bitDepth: number },
 ): Promise<Buffer> => {
-	return new Promise((resolve, reject) => {
-		const chunks: Buffer[] = [];
+	return new Promise((resolve) => {
+		const { channels, sampleRate, bitDepth } = options;
+		const bytesPerSample = bitDepth / 8;
+		const blockAlign = channels * bytesPerSample;
+		const byteRate = sampleRate * blockAlign;
+		const dataSize = pcmData.length;
+		const fileSize = 36 + dataSize;
 
-		// Create WAV file writer
-		const writer = new wav.FileWriter("temp.wav", {
-			channels: options.channels,
-			sampleRate: options.sampleRate,
-			bitDepth: options.bitDepth,
-		});
+		// Create WAV header buffer (44 bytes)
+		const header = Buffer.alloc(44);
+		let offset = 0;
 
-		// Collect chunks
-		writer.on("data", (chunk: Buffer) => {
-			chunks.push(chunk);
-		});
+		// RIFF header
+		header.write("RIFF", offset); offset += 4;
+		header.writeUInt32LE(fileSize, offset); offset += 4;
+		header.write("WAVE", offset); offset += 4;
 
-		writer.on("end", () => {
-			const wavBuffer = Buffer.concat(chunks);
-			resolve(wavBuffer);
-		});
+		// fmt chunk
+		header.write("fmt ", offset); offset += 4;
+		header.writeUInt32LE(16, offset); offset += 4; // Subchunk1Size
+		header.writeUInt16LE(1, offset); offset += 2; // AudioFormat (PCM)
+		header.writeUInt16LE(channels, offset); offset += 2; // NumChannels
+		header.writeUInt32LE(sampleRate, offset); offset += 4; // SampleRate
+		header.writeUInt32LE(byteRate, offset); offset += 4; // ByteRate
+		header.writeUInt16LE(blockAlign, offset); offset += 2; // BlockAlign
+		header.writeUInt16LE(bitDepth, offset); offset += 2; // BitsPerSample
 
-		writer.on("error", (error: Error) => {
-			reject(error);
-		});
+		// data chunk
+		header.write("data", offset); offset += 4;
+		header.writeUInt32LE(dataSize, offset); offset += 4;
 
-		// Write PCM data and close
-		writer.write(pcmData);
-		writer.end();
+		// Concatenate header with PCM data
+		const wavBuffer = Buffer.concat([header, pcmData]);
+		resolve(wavBuffer);
 	});
 };
 
