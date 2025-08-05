@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { logger } from "../lib/logger";
 import {
 	addSpeechStylePrompt,
@@ -197,11 +197,11 @@ const Options: React.FC = () => {
 		}
 	};
 
-	const updatePromptPreview = (template: string) => {
+	const updatePromptPreview = useCallback((template: string) => {
 		const sampleText = "This is a sample article about technology and innovation.";
 		const preview = substituteSpeechStyleTemplate(template, sampleText);
 		setPromptPreview(preview);
-	};
+	}, []);
 
 	if (isLoading) {
 		return (
@@ -621,7 +621,7 @@ const PromptModal: React.FC<PromptModalProps> = ({
 
 	useEffect(() => {
 		updatePreview(formData.template);
-	}, [formData.template]);
+	}, [formData.template, updatePreview]);
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
