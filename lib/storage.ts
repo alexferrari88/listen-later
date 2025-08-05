@@ -136,7 +136,7 @@ export async function getDefaultExtensionOptions(): ExtensionOptions {
 	return {
 		apiKey: "",
 		modelName: "gemini-2.5-flash-preview-tts",
-		voice: "Kore",
+		voice: "Aoede",
 	};
 }
 

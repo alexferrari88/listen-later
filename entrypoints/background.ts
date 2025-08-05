@@ -567,7 +567,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 			{
 				parts: [
 					{
-						text: `Please read the following text aloud: ${job.text}`,
+						text: `Narrate the following text in a professional, authoritative, and well-paced documentary style: ${job.text}`,
 					},
 				],
 			},

@@ -50,7 +50,7 @@ const Options: React.FC = () => {
 	const [options, setOptions] = useState<ExtensionOptions>({
 		apiKey: "",
 		modelName: "gemini-2.5-flash-preview-tts",
-		voice: "Kore",
+		voice: "Aoede",
 	});
 	const [isLoading, setIsLoading] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);
