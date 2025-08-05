@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	areOptionsConfigured,
+	checkRateLimit,
 	cleanupOldJobs,
+	cleanupRateLimitData,
 	type ExtensionOptions,
 	type ExtensionState,
 	generateFilename,
@@ -911,6 +913,238 @@ describe("Storage Functions", () => {
 
 			const filename = generateFilename(tabInfo);
 			expect(filename).toBe("Title - with existing separators - example.com.mp3");
+		});
+	});
+
+	describe("Rate limiting functions", () => {
+		beforeEach(async () => {
+			// Clear rate limit storage before each test
+			delete mockStorageData["rateLimits"];
+		});
+
+		describe("checkRateLimit function", () => {
+			it("should allow first request from new tab/origin", async () => {
+				const result = await checkRateLimit(123, "https://example.com");
+				
+				expect(result.allowed).toBe(true);
+				expect(result.error).toBeUndefined();
+			});
+
+			it("should allow multiple requests within limit", async () => {
+				const tabId = 123;
+				const origin = "https://example.com";
+
+				// Make 4 requests (under the limit of 5)
+				for (let i = 0; i < 4; i++) {
+					const result = await checkRateLimit(tabId, origin);
+					expect(result.allowed).toBe(true);
+					expect(result.error).toBeUndefined();
+				}
+			});
+
+			it("should deny requests when limit is exceeded", async () => {
+				const tabId = 123;
+				const origin = "https://example.com";
+
+				// Make 5 requests (at the limit)
+				for (let i = 0; i < 5; i++) {
+					const result = await checkRateLimit(tabId, origin);
+					expect(result.allowed).toBe(true);
+				}
+
+				// 6th request should be denied
+				const result = await checkRateLimit(tabId, origin);
+				expect(result.allowed).toBe(false);
+				expect(result.error).toContain("Rate limit exceeded");
+				expect(result.error).toContain("Maximum 5 requests per 60 seconds");
+			});
+
+			it("should implement sliding window correctly", async () => {
+				const tabId = 123;
+				const origin = "https://example.com";
+				
+				// Mock time to control sliding window
+				const originalNow = Date.now;
+				let mockTime = 1000000; // Start at 1 million ms
+				Date.now = vi.fn(() => mockTime);
+
+				try {
+					// Make 5 requests to hit the limit
+					for (let i = 0; i < 5; i++) {
+						const result = await checkRateLimit(tabId, origin);
+						expect(result.allowed).toBe(true);
+						mockTime += 1000; // Advance 1 second
+					}
+
+					// 6th request should be denied
+					const deniedResult = await checkRateLimit(tabId, origin);
+					expect(deniedResult.allowed).toBe(false);
+
+					// Advance time by 60 seconds to move outside the window
+					mockTime += 60000;
+
+					// Should be allowed again as old requests fall outside window
+					const allowedResult = await checkRateLimit(tabId, origin);
+					expect(allowedResult.allowed).toBe(true);
+				} finally {
+					Date.now = originalNow;
+				}
+			});
+
+			it("should handle different tab/origin combinations independently", async () => {
+				// Different origins should have separate limits
+				const tabId = 123;
+				const origin1 = "https://example.com";
+				const origin2 = "https://test.com";
+
+				// Max out requests for origin1
+				for (let i = 0; i < 5; i++) {
+					const result = await checkRateLimit(tabId, origin1);
+					expect(result.allowed).toBe(true);
+				}
+
+				// Origin1 should be limited
+				const result1 = await checkRateLimit(tabId, origin1);
+				expect(result1.allowed).toBe(false);
+
+				// Origin2 should still be allowed
+				const result2 = await checkRateLimit(tabId, origin2);
+				expect(result2.allowed).toBe(true);
+
+				// Different tabs should also be independent
+				const tabId2 = 456;
+				const result3 = await checkRateLimit(tabId2, origin1);
+				expect(result3.allowed).toBe(true);
+			});
+
+			it("should clean up old timestamps from sliding window", async () => {
+				const tabId = 123;
+				const origin = "https://example.com";
+				
+				const originalNow = Date.now;
+				let mockTime = 1000000;
+				Date.now = vi.fn(() => mockTime);
+
+				try {
+					// Make 3 requests
+					for (let i = 0; i < 3; i++) {
+						await checkRateLimit(tabId, origin);
+						mockTime += 1000;
+					}
+
+					// Advance time significantly to make old timestamps expire
+					mockTime += 120000; // 2 minutes
+
+					// Make 2 more requests - should be allowed despite previous requests
+					// because old ones should be cleaned up
+					for (let i = 0; i < 2; i++) {
+						const result = await checkRateLimit(tabId, origin);
+						expect(result.allowed).toBe(true);
+					}
+
+					// Verify the rate limit storage doesn't contain stale data
+					const rateLimitStorage = mockStorageData["rateLimits"];
+					expect(rateLimitStorage).toBeDefined();
+					const key = `${tabId}:${origin}`;
+					const entry = rateLimitStorage.entries[key];
+					expect(entry.timestamps.length).toBeLessThanOrEqual(2); // Only recent requests
+				} finally {
+					Date.now = originalNow;
+				}
+			});
+		});
+
+		describe("cleanupRateLimitData function", () => {
+			it("should remove expired entries", async () => {
+				const originalNow = Date.now;
+				let mockTime = 1000000;
+				Date.now = vi.fn(() => mockTime);
+
+				try {
+					// Create some rate limit entries
+					await checkRateLimit(123, "https://example.com");
+					await checkRateLimit(456, "https://test.com");
+
+					// Advance time beyond cleanup threshold
+					mockTime += 600000; // 10 minutes
+
+					// Run cleanup
+					await cleanupRateLimitData();
+
+					// All entries should be removed as they're beyond the cleanup threshold
+					const rateLimitStorage = mockStorageData["rateLimits"];
+					expect(Object.keys(rateLimitStorage.entries)).toHaveLength(0);
+				} finally {
+					Date.now = originalNow;
+				}
+			});
+
+			it("should preserve recent entries", async () => {
+				const originalNow = Date.now;
+				let mockTime = 1000000;
+				Date.now = vi.fn(() => mockTime);
+
+				try {
+					// Create some recent entries
+					await checkRateLimit(123, "https://example.com");
+					mockTime += 30000; // 30 seconds later
+					await checkRateLimit(456, "https://test.com");
+
+					// Run cleanup (shouldn't remove anything as entries are recent)
+					await cleanupRateLimitData();
+
+					// Entries should still exist
+					const rateLimitStorage = mockStorageData["rateLimits"];
+					expect(Object.keys(rateLimitStorage.entries).length).toBeGreaterThan(0);
+				} finally {
+					Date.now = originalNow;
+				}
+			});
+
+			it("should only run when cleanup interval has passed", async () => {
+				const originalNow = Date.now;
+				let mockTime = 1000000;
+				Date.now = vi.fn(() => mockTime);
+
+				try {
+					// Set up initial rate limit storage with recent lastCleanup
+					mockStorageData["rateLimits"] = {
+						entries: {},
+						lastCleanup: mockTime - 60000, // 1 minute ago
+					};
+
+					const initialStorage = { ...mockStorageData["rateLimits"] };
+
+					// Run cleanup - should not do anything as interval hasn't passed
+					await cleanupRateLimitData();
+
+					// Storage should be unchanged
+					expect(mockStorageData["rateLimits"].lastCleanup).toBe(initialStorage.lastCleanup);
+
+					// Now advance time beyond cleanup interval
+					mockTime += 300000; // 5 minutes
+
+					// Run cleanup again - should update lastCleanup
+					await cleanupRateLimitData();
+
+					// lastCleanup should be updated
+					expect(mockStorageData["rateLimits"].lastCleanup).toBe(mockTime);
+				} finally {
+					Date.now = originalNow;
+				}
+			});
+
+			it("should handle empty storage gracefully", async () => {
+				// Ensure no rate limit storage exists
+				delete mockStorageData["rateLimits"];
+
+				// Should not throw error
+				await expect(cleanupRateLimitData()).resolves.not.toThrow();
+
+				// The function handles empty storage gracefully but may not save back to storage
+				// since there are no entries to clean up and no changes to save
+				// This is expected behavior - the function only saves when there are changes
+			});
 		});
 	});
 });
