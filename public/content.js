@@ -56,7 +56,7 @@ function extractContent() {
 			const cleanText = article.textContent
 				.replace(/\s+/g, " ")
 				.trim()
-				.substring(0, 10000); // Limit to ~10k characters for API limits
+				.substring(0, 100000); // Limit to ~100k characters (well within 32k token API limit)
 
 			log.debug("Text processing complete", {
 				originalLength: article.textContent.length,
