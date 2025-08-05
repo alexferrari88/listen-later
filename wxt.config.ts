@@ -12,5 +12,11 @@ export default defineConfig({
 			"downloads",
 			"notifications",
 		],
+		icons: {
+			16: "/icon-128.svg",
+			32: "/icon-128.svg", 
+			48: "/icon-128.svg",
+			128: "/icon-128.svg",
+		},
 	},
 });

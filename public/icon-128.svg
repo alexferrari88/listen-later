@@ -1,5 +1,20 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="128" height="128" rx="20" fill="#4F46E5"/>
-  <path d="M40 35C37.2386 35 35 37.2386 35 40V88C35 90.7614 37.2386 93 40 93H88C90.7614 93 93 90.7614 93 88V40C93 37.2386 90.7614 35 88 35H40Z" fill="white"/>
-  <path d="M55 50L75 64L55 78V50Z" fill="#4F46E5"/>
+  <defs>
+    <linearGradient id="bookmarkGradient" x1="64" y1="0" x2="64" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7E57C2"/>
+      <stop offset="1" stop-color="#42A5F5"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Bookmark Body -->
+  <path 
+    d="M24 14 H104 V114 L64 94 L24 114 V14 Z" 
+    fill="url(#bookmarkGradient)"
+  />
+  
+  <!-- Play Button -->
+  <path 
+    d="M52 34 L80 48 L52 62 Z" 
+    fill="white"
+  />
 </svg>
