@@ -66,6 +66,21 @@ const handleMessage = withAsyncLogging(async (
 				});
 				await handleContentExtracted(message.jobId, message.text, message.title, sendResponse);
 				break;
+			case "CONTENT_EXTRACTED_FOR_REVIEW":
+				logger.debug("Handling CONTENT_EXTRACTED_FOR_REVIEW message", {
+					jobId: message.jobId,
+					textLength: message.text?.length,
+					title: message.title
+				});
+				await handleContentExtractedForReview(message.jobId, message.text, message.title, sendResponse);
+				break;
+			case "CONFIRM_TEXT_FOR_TTS":
+				logger.debug("Handling CONFIRM_TEXT_FOR_TTS message", {
+					jobId: message.jobId,
+					textLength: message.text?.length
+				});
+				await handleConfirmTextForTTS(message.jobId, message.text, sendResponse);
+				break;
 			case "CONTENT_ERROR":
 				logger.debug("Handling CONTENT_ERROR message", { 
 					jobId: message.jobId,
@@ -218,6 +233,71 @@ const handleContentExtracted = withAsyncLogging(async (
 		throw error;
 	}
 }, 'handleContentExtracted');
+
+const handleContentExtractedForReview = withAsyncLogging(async (
+	jobId: string,
+	text: string,
+	articleTitle: string,
+	sendResponse: (response?: any) => void,
+) => {
+	logger.debug("Content extracted for review, waiting for user confirmation", {
+		jobId,
+		textLength: text.length,
+		articleTitle,
+		preview: text.substring(0, 100) + '...'
+	});
+	
+	// Get the job and update it with extracted text
+	const job = await getJob(jobId);
+	if (!job) {
+		throw new Error(`Job ${jobId} not found`);
+	}
+
+	// Update job with extracted text, article title, and set status to awaiting confirmation
+	await updateJob(jobId, {
+		text,
+		tabInfo: {
+			...job.tabInfo,
+			articleTitle,
+		},
+		status: "awaiting_confirmation",
+		message: "Text extracted. Please review and confirm to proceed with speech generation.",
+	});
+
+	sendResponse({ success: true });
+}, 'handleContentExtractedForReview');
+
+const handleConfirmTextForTTS = withAsyncLogging(async (
+	jobId: string,
+	userText: string,
+	sendResponse: (response?: any) => void,
+) => {
+	logger.debug("User confirmed text for TTS", {
+		jobId,
+		textLength: userText.length,
+		preview: userText.substring(0, 100) + '...'
+	});
+	
+	// Get the job and update it with user-confirmed text
+	const job = await getJob(jobId);
+	if (!job) {
+		throw new Error(`Job ${jobId} not found`);
+	}
+
+	// Update job with user-confirmed text and set status back to processing
+	await updateJob(jobId, {
+		text: userText,
+		status: "processing",
+		message: "Preparing speech generation request...",
+	});
+
+	try {
+		await generateSpeech(jobId);
+		sendResponse({ success: true });
+	} catch (error) {
+		throw error;
+	}
+}, 'handleConfirmTextForTTS');
 
 const handleContentError = withAsyncLogging(async (
 	jobId: string,

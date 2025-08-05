@@ -90,7 +90,7 @@ function extractContent() {
 				});
 				// Send extracted content to background script with job ID
 				chrome.runtime.sendMessage({
-					type: "CONTENT_EXTRACTED",
+					type: "CONTENT_EXTRACTED_FOR_REVIEW",
 					jobId: window.currentJobId,
 					text: cleanText,
 					title: article.title || document.title,

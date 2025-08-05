@@ -14,7 +14,7 @@ export interface ProcessingJob {
 	id: string; // unique job ID
 	tabId?: number; // original tab ID (may be undefined if tab closed) 
 	tabInfo: TabInfo;
-	status: "processing" | "success" | "error";
+	status: "processing" | "awaiting_confirmation" | "success" | "error";
 	message?: string;
 	startTime: number;
 	text?: string; // for retry capability
