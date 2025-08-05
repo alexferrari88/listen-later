@@ -549,7 +549,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 	// Update job status for API call preparation
 	await updateJob(jobId, {
 		message: "Preparing speech generation request...",
-		progress: 10,
+		progress: 8,
 	});
 
 	// Make API call to Gemini
@@ -584,10 +584,19 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 	};
 	logger.debug("Sending API request", { endpoint, requestBody });
 
+	// Calculate estimated time based on word count
+	const wordCount = job.text.split(/\s+/).length;
+	let timeEstimate = "30 seconds to 2 minutes";
+	if (wordCount > 1500) {
+		timeEstimate = "3 to 8 minutes";
+	} else if (wordCount > 500) {
+		timeEstimate = "1 to 4 minutes";
+	}
+
 	// Update job status during API call
 	await updateJob(jobId, {
-		message: "Connecting to Gemini AI - generating speech...",
-		progress: 30,
+		message: `AI is generating speech (~${wordCount} words, estimated ${timeEstimate})...`,
+		progress: 15,
 	});
 
 	let response: Response;
@@ -668,7 +677,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 	// Update progress after receiving API response
 	await updateJob(jobId, {
 		message: "Speech generated successfully - processing audio...",
-		progress: 70,
+		progress: 85,
 	});
 
 	const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -688,7 +697,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 	// Update job status for download
 	await updateJob(jobId, {
 		message: "Preparing audio file for download...",
-		progress: 90,
+		progress: 95,
 	});
 
 	await downloadAudio(jobId, audioData);

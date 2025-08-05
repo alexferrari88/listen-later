@@ -253,7 +253,7 @@ const Popup: React.FC = () => {
 	const getProcessingStage = (
 		message?: string,
 	): { stage: string; emoji: string; progress: number } => {
-		if (!message) return { stage: "Processing", emoji: "⚙️", progress: 10 };
+		if (!message) return { stage: "Processing", emoji: "⚙️", progress: 5 };
 
 		const lowerMessage = message.toLowerCase();
 
@@ -263,26 +263,27 @@ const Popup: React.FC = () => {
 			lowerMessage.includes("loading") ||
 			lowerMessage.includes("content processing")
 		) {
-			return { stage: "Extracting content", emoji: "📄", progress: 20 };
+			return { stage: "Extracting content", emoji: "📄", progress: 8 };
 		} else if (
 			lowerMessage.includes("preparing speech") ||
 			lowerMessage.includes("starting speech") ||
 			lowerMessage.includes("preparing")
 		) {
-			return { stage: "Preparing request", emoji: "🔧", progress: 40 };
+			return { stage: "Preparing request", emoji: "🔧", progress: 12 };
 		} else if (
 			lowerMessage.includes("connecting to gemini") ||
+			lowerMessage.includes("connecting to ai") ||
 			lowerMessage.includes("sending to ai") ||
 			lowerMessage.includes("contacting")
 		) {
-			return { stage: "Connecting to AI", emoji: "🔗", progress: 50 };
+			return { stage: "AI is generating speech", emoji: "🤖", progress: 15 };
 		} else if (
 			lowerMessage.includes("speech") ||
 			lowerMessage.includes("ai") ||
 			lowerMessage.includes("generating") ||
 			lowerMessage.includes("gemini")
 		) {
-			return { stage: "Generating speech", emoji: "🎙️", progress: 70 };
+			return { stage: "AI is generating speech", emoji: "🎙️", progress: 50 };
 		} else if (
 			lowerMessage.includes("processing audio") ||
 			lowerMessage.includes("speech generated") ||
@@ -294,9 +295,9 @@ const Popup: React.FC = () => {
 			lowerMessage.includes("preparing audio") ||
 			lowerMessage.includes("finalizing")
 		) {
-			return { stage: "Finalizing", emoji: "📥", progress: 95 };
+			return { stage: "Finalizing download", emoji: "📥", progress: 95 };
 		}
-		return { stage: "Processing", emoji: "⚙️", progress: 30 };
+		return { stage: "Processing", emoji: "⚙️", progress: 20 };
 	};
 
 	const openOptionsPage = () => {
@@ -321,6 +322,10 @@ const Popup: React.FC = () => {
 					...jobCardStyle,
 					...(isCurrentTab ? currentTabJobStyle : {}),
 					...(job.status === "processing" ? processingJobCardStyle : {}),
+					...(job.status === "processing" &&
+					stageInfo.stage.includes("generating speech")
+						? { animation: "workingGlow 3s infinite ease-in-out" }
+						: {}),
 				}}
 			>
 				<div style={jobHeaderStyle}>
@@ -375,9 +380,33 @@ const Popup: React.FC = () => {
 						>
 							{job.message}
 						</div>
+						{job.text && (
+							<div
+								style={{
+									...contentInfoStyle,
+									...(stageInfo.stage.includes("generating speech")
+										? { animation: "activeWork 2s infinite ease-in-out" }
+										: {}),
+								}}
+							>
+								<span>
+									Processing ~{Math.round(job.text.split(" ").length)} words
+								</span>
+								{stageInfo.stage.includes("generating speech") && (
+									<span style={timeEstimateStyle}>
+										• Expected:{" "}
+										{job.text.split(" ").length < 500
+											? "30s-2min"
+											: job.text.split(" ").length < 1500
+												? "1-4min"
+												: "3-8min"}
+									</span>
+								)}
+							</div>
+						)}
 						<div style={connectionStatusStyle}>
 							<div style={connectionDotStyle}></div>
-							<span>Active connection • {elapsed} elapsed</span>
+							<span>Processing normally • {elapsed} elapsed</span>
 						</div>
 						{job.progress !== undefined && (
 							<div style={progressContainerStyle}>
@@ -1116,6 +1145,22 @@ const retryButtonStyle: React.CSSProperties = {
 	transition: "all 0.2s ease",
 };
 
+// Content awareness styles
+const contentInfoStyle: React.CSSProperties = {
+	fontSize: "11px",
+	color: "#666",
+	backgroundColor: "#f8f9fa",
+	padding: "6px 8px",
+	borderRadius: "4px",
+	marginBottom: "6px",
+	border: "1px solid #e0e0e0",
+};
+
+const timeEstimateStyle: React.CSSProperties = {
+	color: "#4285f4",
+	fontWeight: "500",
+};
+
 // Add CSS animations
 const styleSheet = document.createElement("style");
 styleSheet.textContent = `
@@ -1154,6 +1199,44 @@ styleSheet.textContent = `
 	@keyframes shimmer {
 		0% { background-position: -200% 0; }
 		100% { background-position: 200% 0; }
+	}
+	
+	@keyframes activeWork {
+		0% { 
+			opacity: 1; 
+			transform: scale(1);
+		}
+		25% { 
+			opacity: 0.8; 
+			transform: scale(1.02);
+		}
+		50% { 
+			opacity: 0.9; 
+			transform: scale(0.98);
+		}
+		75% { 
+			opacity: 0.85; 
+			transform: scale(1.01);
+		}
+		100% { 
+			opacity: 1; 
+			transform: scale(1);
+		}
+	}
+	
+	@keyframes workingGlow {
+		0% { 
+			border-color: rgba(66, 133, 244, 0.3);
+			box-shadow: 0 0 5px rgba(66, 133, 244, 0.2);
+		}
+		50% { 
+			border-color: rgba(76, 175, 80, 0.4);
+			box-shadow: 0 0 15px rgba(76, 175, 80, 0.3);
+		}
+		100% { 
+			border-color: rgba(66, 133, 244, 0.3);
+			box-shadow: 0 0 5px rgba(66, 133, 244, 0.2);
+		}
 	}
 `;
 if (!document.head.querySelector('style[data-listen-later="animations"]')) {
