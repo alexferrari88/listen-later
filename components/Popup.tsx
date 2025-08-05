@@ -15,6 +15,11 @@ import {
 	updateJob,
 } from "../lib/storage";
 
+// Helper function to check if a job is active (preparing or processing)
+const isActiveJob = (job: ProcessingJob): boolean => {
+	return job.status === "preparing" || job.status === "processing";
+};
+
 const Popup: React.FC = () => {
 	const [allJobs, setAllJobs] = useState<ProcessingJob[]>([]);
 	const [currentTabId, setCurrentTabId] = useState<number | null>(null);
@@ -118,19 +123,17 @@ const Popup: React.FC = () => {
 		return () => chrome.storage.onChanged.removeListener(handleStorageChange);
 	}, [currentTabId]);
 
-	// Real-time timer effect for processing jobs
+	// Real-time timer effect for active jobs
 	useEffect(() => {
-		const hasProcessingJobs = allJobs.some(
-			(job) => job.status === "processing",
-		);
+		const hasActiveJobs = allJobs.some(isActiveJob);
 
-		if (hasProcessingJobs) {
+		if (hasActiveJobs) {
 			// Update current time every second to refresh elapsed time display
 			intervalRef.current = setInterval(() => {
 				setCurrentTime(Date.now());
 			}, 1000);
 		} else if (intervalRef.current) {
-			// Clear interval when no processing jobs
+			// Clear interval when no active jobs
 			clearInterval(intervalRef.current);
 			intervalRef.current = null;
 		}
@@ -321,8 +324,8 @@ const Popup: React.FC = () => {
 				style={{
 					...jobCardStyle,
 					...(isCurrentTab ? currentTabJobStyle : {}),
-					...(job.status === "processing" ? processingJobCardStyle : {}),
-					...(job.status === "processing" &&
+					...(isActiveJob(job) ? processingJobCardStyle : {}),
+					...(isActiveJob(job) &&
 					stageInfo.stage.includes("generating speech")
 						? { animation: "workingGlow 3s infinite ease-in-out" }
 						: {}),
@@ -333,7 +336,7 @@ const Popup: React.FC = () => {
 						<span
 							style={{
 								fontSize: "16px",
-								...(job.status === "processing" ? pulsingEmojiStyle : {}),
+								...(isActiveJob(job) ? pulsingEmojiStyle : {}),
 							}}
 						>
 							{status.emoji}
@@ -358,7 +361,7 @@ const Popup: React.FC = () => {
 					</div>
 				)}
 
-				{job.status === "processing" && (
+				{isActiveJob(job) && (
 					<div>
 						<div style={stageIndicatorStyle}>
 							<span style={stageEmojiStyle}>{stageInfo.emoji}</span>
@@ -450,7 +453,7 @@ const Popup: React.FC = () => {
 				)}
 
 				<div style={jobActionsStyle}>
-					{job.status === "processing" && (
+					{isActiveJob(job) && (
 						<button
 							onClick={() => handleCancelJob(job.id)}
 							style={jobCancelButtonStyle}
@@ -466,7 +469,7 @@ const Popup: React.FC = () => {
 							🔄 Retry
 						</button>
 					)}
-					{job.status !== "processing" && (
+					{!isActiveJob(job) && (
 						<button
 							onClick={() => handleRemoveJob(job.id)}
 							style={jobRemoveButtonStyle}
@@ -516,7 +519,7 @@ const Popup: React.FC = () => {
 
 	// Get active job for current tab
 	const currentTabJob =
-		currentTabJobs.find((job) => job.status === "processing") ||
+		currentTabJobs.find(isActiveJob) ||
 		currentTabJobs[0];
 	const hasCurrentTabJob = !!currentTabJob;
 	const hasOtherJobs = otherJobs.length > 0;
@@ -529,7 +532,7 @@ const Popup: React.FC = () => {
 			<div style={headerStyle}>
 				<h2 style={titleStyle}>
 					Listen Later
-					{allJobs.some((job) => job.status === "processing") && (
+					{allJobs.some(isActiveJob) && (
 						<span style={activityDotStyle}>●</span>
 					)}
 				</h2>
@@ -537,12 +540,12 @@ const Popup: React.FC = () => {
 					<div
 						style={{
 							...headerBadgeStyle,
-							...(allJobs.some((job) => job.status === "processing")
+							...(allJobs.some(isActiveJob)
 								? { animation: "breathe 2s infinite ease-in-out" }
 								: {}),
 						}}
 					>
-						{allJobs.filter((job) => job.status === "processing").length} active
+						{allJobs.filter(isActiveJob).length} active
 					</div>
 				)}
 			</div>

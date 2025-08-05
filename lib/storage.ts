@@ -14,7 +14,7 @@ export interface ProcessingJob {
 	id: string; // unique job ID
 	tabId?: number; // original tab ID (may be undefined if tab closed)
 	tabInfo: TabInfo;
-	status: "processing" | "success" | "error";
+	status: "preparing" | "processing" | "success" | "error";
 	message?: string;
 	progress?: number; // 0-100 percentage progress
 	startTime: number;
@@ -43,6 +43,7 @@ const STORAGE_KEYS = {
 
 // Constants
 const MAX_CONCURRENT_JOBS = 3;
+const PREPARING_JOB_CLEANUP_TIME = 10 * 60 * 1000; // 10 minutes in milliseconds
 const SUCCESS_JOB_CLEANUP_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
 const ERROR_JOB_CLEANUP_TIME = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
@@ -211,7 +212,7 @@ export async function createJob(
 		id: generateJobId(),
 		tabId,
 		tabInfo,
-		status: "processing",
+		status: "preparing",
 		message: "Starting content processing...",
 		startTime: Date.now(),
 		text,
@@ -293,6 +294,9 @@ export async function cleanupOldJobs(): Promise<void> {
 		if (job.status === "processing") return true; // Always keep processing jobs
 
 		const jobAge = now - job.startTime;
+		if (job.status === "preparing") {
+			return jobAge < PREPARING_JOB_CLEANUP_TIME; // Clean preparing jobs after 10 minutes
+		}
 		if (job.status === "success") {
 			return jobAge < SUCCESS_JOB_CLEANUP_TIME; // Clean success jobs after 5 minutes
 		}
@@ -311,6 +315,8 @@ export async function cleanupOldJobs(): Promise<void> {
 			removedCount,
 			remaining: state.activeJobs.length,
 			breakdown: {
+				preparing: state.activeJobs.filter((j) => j.status === "preparing")
+					.length,
 				processing: state.activeJobs.filter((j) => j.status === "processing")
 					.length,
 				success: state.activeJobs.filter((j) => j.status === "success").length,

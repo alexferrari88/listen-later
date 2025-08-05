@@ -280,6 +280,53 @@ describe("Storage Functions", () => {
 	});
 
 	describe("cleanupOldJobs function", () => {
+		it("should remove preparing jobs older than 10 minutes", async () => {
+			const oldPreparingJob = {
+				id: "old-preparing",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "preparing" as const,
+				message: "Preparing...",
+				startTime: Date.now() - 11 * 60 * 1000, // 11 minutes ago
+				text: "test text",
+			};
+
+			const initialState: ExtensionState = {
+				activeJobs: [oldPreparingJob],
+				maxConcurrentJobs: 3,
+			};
+			mockStorageData["extensionState"] = initialState;
+
+			await cleanupOldJobs();
+
+			const finalState = await getExtensionState();
+			expect(finalState.activeJobs).toHaveLength(0);
+		});
+
+		it("should preserve preparing jobs newer than 10 minutes", async () => {
+			const newPreparingJob = {
+				id: "new-preparing",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "preparing" as const,
+				message: "Preparing...",
+				startTime: Date.now() - 5 * 60 * 1000, // 5 minutes ago
+				text: "test text",
+			};
+
+			const initialState: ExtensionState = {
+				activeJobs: [newPreparingJob],
+				maxConcurrentJobs: 3,
+			};
+			mockStorageData["extensionState"] = initialState;
+
+			await cleanupOldJobs();
+
+			const finalState = await getExtensionState();
+			expect(finalState.activeJobs).toHaveLength(1);
+			expect(finalState.activeJobs[0].id).toBe("new-preparing");
+		});
+
 		it("should preserve processing jobs regardless of age", async () => {
 			const oldProcessingJob = {
 				id: "old-processing",
@@ -415,56 +462,82 @@ describe("Storage Functions", () => {
 					text: "test text",
 				},
 				{
-					id: "old-success",
+					id: "old-preparing",
 					tabId: 2,
 					tabInfo: {
 						url: "http://test2.com",
 						title: "Test2",
 						domain: "test2.com",
 					},
-					status: "success" as const,
-					message: "Done",
-					startTime: now - 6 * 60 * 1000, // 6 minutes ago - should remove
+					status: "preparing" as const,
+					message: "Preparing...",
+					startTime: now - 15 * 60 * 1000, // 15 minutes ago - should remove
 					text: "test text 2",
 				},
 				{
-					id: "new-success",
+					id: "new-preparing",
 					tabId: 3,
 					tabInfo: {
 						url: "http://test3.com",
 						title: "Test3",
 						domain: "test3.com",
 					},
-					status: "success" as const,
-					message: "Done",
-					startTime: now - 3 * 60 * 1000, // 3 minutes ago - should keep
+					status: "preparing" as const,
+					message: "Preparing...",
+					startTime: now - 5 * 60 * 1000, // 5 minutes ago - should keep
 					text: "test text 3",
 				},
 				{
-					id: "new-error",
+					id: "old-success",
 					tabId: 4,
 					tabInfo: {
 						url: "http://test4.com",
 						title: "Test4",
 						domain: "test4.com",
 					},
-					status: "error" as const,
-					message: "Failed",
-					startTime: now - 6 * 60 * 1000, // 6 minutes ago - should keep
+					status: "success" as const,
+					message: "Done",
+					startTime: now - 6 * 60 * 1000, // 6 minutes ago - should remove
 					text: "test text 4",
 				},
 				{
-					id: "old-error",
+					id: "new-success",
 					tabId: 5,
 					tabInfo: {
 						url: "http://test5.com",
 						title: "Test5",
 						domain: "test5.com",
 					},
+					status: "success" as const,
+					message: "Done",
+					startTime: now - 3 * 60 * 1000, // 3 minutes ago - should keep
+					text: "test text 5",
+				},
+				{
+					id: "new-error",
+					tabId: 6,
+					tabInfo: {
+						url: "http://test6.com",
+						title: "Test6",
+						domain: "test6.com",
+					},
+					status: "error" as const,
+					message: "Failed",
+					startTime: now - 6 * 60 * 1000, // 6 minutes ago - should keep
+					text: "test text 6",
+				},
+				{
+					id: "old-error",
+					tabId: 7,
+					tabInfo: {
+						url: "http://test7.com",
+						title: "Test7",
+						domain: "test7.com",
+					},
 					status: "error" as const,
 					message: "Failed",
 					startTime: now - 25 * 60 * 60 * 1000, // 25 hours ago - should remove
-					text: "test text 5",
+					text: "test text 7",
 				},
 			];
 
@@ -477,12 +550,14 @@ describe("Storage Functions", () => {
 			await cleanupOldJobs();
 
 			const finalState = await getExtensionState();
-			expect(finalState.activeJobs).toHaveLength(3);
+			expect(finalState.activeJobs).toHaveLength(4);
 
 			const remainingIds = finalState.activeJobs.map((job) => job.id);
 			expect(remainingIds).toContain("processing-job");
+			expect(remainingIds).toContain("new-preparing");
 			expect(remainingIds).toContain("new-success");
 			expect(remainingIds).toContain("new-error");
+			expect(remainingIds).not.toContain("old-preparing");
 			expect(remainingIds).not.toContain("old-success");
 			expect(remainingIds).not.toContain("old-error");
 		});

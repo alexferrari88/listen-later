@@ -289,13 +289,14 @@ const handleContentExtracted = withAsyncLogging(
 			throw new Error(`Job ${jobId} not found`);
 		}
 
-		// Update job with extracted text and article title
+		// Update job with extracted text and article title, and change status to processing
 		await updateJob(jobId, {
 			text,
 			tabInfo: {
 				...job.tabInfo,
 				articleTitle,
 			},
+			status: "processing",
 			message: "Preparing speech generation request...",
 		});
 
