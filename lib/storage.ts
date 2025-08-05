@@ -152,27 +152,37 @@ export function generateJobId(): string {
 }
 
 export function generateFilename(tabInfo: TabInfo): string {
-	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-
-	// Use page title if reasonable length, otherwise use domain
-	let identifier: string;
-	if (tabInfo.articleTitle && tabInfo.articleTitle.length <= 50) {
-		identifier = tabInfo.articleTitle;
-	} else if (tabInfo.title && tabInfo.title.length <= 50) {
-		identifier = tabInfo.title;
+	// Use article title first, then page title, then domain as fallback
+	let title = "";
+	if (tabInfo.articleTitle && tabInfo.articleTitle.trim()) {
+		title = tabInfo.articleTitle.trim();
+	} else if (tabInfo.title && tabInfo.title.trim()) {
+		title = tabInfo.title.trim();
 	} else {
-		identifier = tabInfo.domain;
+		title = tabInfo.domain;
 	}
 
-	// Sanitize for filesystem
-	const sanitized = identifier
-		.replace(/[<>:"/\\|?*]/g, "-")
-		.replace(/\s+/g, "-")
-		.replace(/-+/g, "-")
-		.replace(/^-|-$/g, "")
-		.substring(0, 50);
+	// Start building the filename with the title
+	let filename = title;
 
-	return `listen-later-${sanitized}-${timestamp}.wav`;
+	// If there's space left (keeping some buffer for domain), append domain
+	const maxTitleLength = 70; // Leave room for domain and separators
+	if (title.length < maxTitleLength && title !== tabInfo.domain) {
+		const remainingSpace = maxTitleLength - title.length - 3; // 3 chars for " - "
+		if (remainingSpace > 10) { // Only add domain if we have reasonable space
+			filename = `${title} - ${tabInfo.domain}`;
+		}
+	}
+
+	// Sanitize for filesystem and truncate if needed
+	const sanitized = filename
+		.replace(/[<>:"/\\|?*]/g, "-")
+		.replace(/\s+/g, " ")
+		.replace(/\s*-\s*/g, " - ")
+		.trim()
+		.substring(0, 80); // Max 80 chars for filename part
+
+	return `${sanitized}.wav`;
 }
 
 export function extractDomain(url: string): string {
