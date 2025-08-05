@@ -12,7 +12,7 @@ const base64ToUint8Array = (base64: string): Uint8Array => {
 };
 
 const uint8ArrayToBase64 = (uint8Array: Uint8Array): string => {
-	let binaryString = '';
+	let binaryString = "";
 	for (let i = 0; i < uint8Array.length; i++) {
 		binaryString += String.fromCharCode(uint8Array[i]);
 	}
@@ -783,7 +783,8 @@ const createWavFile = (
 		const riffBytes = new TextEncoder().encode("RIFF");
 		for (let i = 0; i < 4; i++) view.setUint8(offset + i, riffBytes[i]);
 		offset += 4;
-		view.setUint32(offset, fileSize, true); offset += 4; // Little endian
+		view.setUint32(offset, fileSize, true);
+		offset += 4; // Little endian
 		const waveBytes = new TextEncoder().encode("WAVE");
 		for (let i = 0; i < 4; i++) view.setUint8(offset + i, waveBytes[i]);
 		offset += 4;
@@ -792,26 +793,34 @@ const createWavFile = (
 		const fmtBytes = new TextEncoder().encode("fmt ");
 		for (let i = 0; i < 4; i++) view.setUint8(offset + i, fmtBytes[i]);
 		offset += 4;
-		view.setUint32(offset, 16, true); offset += 4; // Subchunk1Size (little endian)
-		view.setUint16(offset, 1, true); offset += 2; // AudioFormat (PCM, little endian)
-		view.setUint16(offset, channels, true); offset += 2; // NumChannels (little endian)
-		view.setUint32(offset, sampleRate, true); offset += 4; // SampleRate (little endian)
-		view.setUint32(offset, byteRate, true); offset += 4; // ByteRate (little endian)
-		view.setUint16(offset, blockAlign, true); offset += 2; // BlockAlign (little endian)
-		view.setUint16(offset, bitDepth, true); offset += 2; // BitsPerSample (little endian)
+		view.setUint32(offset, 16, true);
+		offset += 4; // Subchunk1Size (little endian)
+		view.setUint16(offset, 1, true);
+		offset += 2; // AudioFormat (PCM, little endian)
+		view.setUint16(offset, channels, true);
+		offset += 2; // NumChannels (little endian)
+		view.setUint32(offset, sampleRate, true);
+		offset += 4; // SampleRate (little endian)
+		view.setUint32(offset, byteRate, true);
+		offset += 4; // ByteRate (little endian)
+		view.setUint16(offset, blockAlign, true);
+		offset += 2; // BlockAlign (little endian)
+		view.setUint16(offset, bitDepth, true);
+		offset += 2; // BitsPerSample (little endian)
 
 		// data chunk
 		const dataBytes = new TextEncoder().encode("data");
 		for (let i = 0; i < 4; i++) view.setUint8(offset + i, dataBytes[i]);
 		offset += 4;
-		view.setUint32(offset, dataSize, true); offset += 4; // Little endian
+		view.setUint32(offset, dataSize, true);
+		offset += 4; // Little endian
 
 		// Concatenate header with PCM data
 		const headerArray = new Uint8Array(header);
 		const wavBuffer = new Uint8Array(headerArray.length + pcmData.length);
 		wavBuffer.set(headerArray, 0);
 		wavBuffer.set(pcmData, headerArray.length);
-		
+
 		resolve(wavBuffer);
 	});
 };
@@ -824,7 +833,13 @@ const showNotification = (
 
 	chrome.notifications.create(notificationId, options, (notificationId) => {
 		if (chrome.runtime.lastError) {
-			logger.error("Failed to show notification", chrome.runtime.lastError);
+			const errorMessage =
+				chrome.runtime.lastError.message || "Unknown notification error";
+			logger.error("Failed to show notification", {
+				error: errorMessage,
+				notificationId,
+				options: { title: options.title, message: options.message },
+			});
 		} else {
 			logger.debug("Notification shown", { notificationId });
 		}

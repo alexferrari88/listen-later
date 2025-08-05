@@ -43,7 +43,8 @@ const STORAGE_KEYS = {
 
 // Constants
 const MAX_CONCURRENT_JOBS = 3;
-const JOB_CLEANUP_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+const SUCCESS_JOB_CLEANUP_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+const ERROR_JOB_CLEANUP_TIME = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 // Helper functions for ExtensionState
 
@@ -277,16 +278,35 @@ export async function cleanupOldJobs(): Promise<void> {
 	const now = Date.now();
 	const initialCount = state.activeJobs.length;
 
-	// Remove completed/failed jobs older than cleanup time
+	// Remove jobs based on status and age
 	state.activeJobs = state.activeJobs.filter((job) => {
-		if (job.status === "processing") return true; // Keep processing jobs
-		return now - job.startTime < JOB_CLEANUP_TIME;
+		if (job.status === "processing") return true; // Always keep processing jobs
+
+		const jobAge = now - job.startTime;
+		if (job.status === "success") {
+			return jobAge < SUCCESS_JOB_CLEANUP_TIME; // Clean success jobs after 5 minutes
+		}
+		if (job.status === "error") {
+			return jobAge < ERROR_JOB_CLEANUP_TIME; // Clean error jobs after 24 hours
+		}
+
+		// Fallback for unknown statuses
+		return jobAge < SUCCESS_JOB_CLEANUP_TIME;
 	});
 
 	const removedCount = initialCount - state.activeJobs.length;
 	if (removedCount > 0) {
 		await setExtensionState(state);
-		logger.debug("Cleaned up old jobs", { removedCount });
+		logger.debug("Cleaned up old jobs", {
+			removedCount,
+			remaining: state.activeJobs.length,
+			breakdown: {
+				processing: state.activeJobs.filter((j) => j.status === "processing")
+					.length,
+				success: state.activeJobs.filter((j) => j.status === "success").length,
+				error: state.activeJobs.filter((j) => j.status === "error").length,
+			},
+		});
 	}
 }
 

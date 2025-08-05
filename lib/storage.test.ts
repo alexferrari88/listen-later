@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	areOptionsConfigured,
+	cleanupOldJobs,
 	type ExtensionOptions,
 	type ExtensionState,
 	getDefaultExtensionOptions,
@@ -273,6 +274,215 @@ describe("Storage Functions", () => {
 
 			const configured = await areOptionsConfigured();
 			expect(configured).toBe(true);
+		});
+	});
+
+	describe("cleanupOldJobs function", () => {
+		it("should preserve processing jobs regardless of age", async () => {
+			const oldProcessingJob = {
+				id: "old-processing",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "processing" as const,
+				message: "Still processing...",
+				startTime: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
+				text: "test text",
+			};
+
+			const initialState: ExtensionState = {
+				activeJobs: [oldProcessingJob],
+				maxConcurrentJobs: 3,
+			};
+			mockStorageData["extensionState"] = initialState;
+
+			await cleanupOldJobs();
+
+			const finalState = await getExtensionState();
+			expect(finalState.activeJobs).toHaveLength(1);
+			expect(finalState.activeJobs[0].id).toBe("old-processing");
+		});
+
+		it("should remove success jobs older than 5 minutes", async () => {
+			const oldSuccessJob = {
+				id: "old-success",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "success" as const,
+				message: "Completed",
+				startTime: Date.now() - 6 * 60 * 1000, // 6 minutes ago
+				text: "test text",
+			};
+
+			const initialState: ExtensionState = {
+				activeJobs: [oldSuccessJob],
+				maxConcurrentJobs: 3,
+			};
+			mockStorageData["extensionState"] = initialState;
+
+			await cleanupOldJobs();
+
+			const finalState = await getExtensionState();
+			expect(finalState.activeJobs).toHaveLength(0);
+		});
+
+		it("should preserve success jobs newer than 5 minutes", async () => {
+			const newSuccessJob = {
+				id: "new-success",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "success" as const,
+				message: "Completed",
+				startTime: Date.now() - 3 * 60 * 1000, // 3 minutes ago
+				text: "test text",
+			};
+
+			const initialState: ExtensionState = {
+				activeJobs: [newSuccessJob],
+				maxConcurrentJobs: 3,
+			};
+			mockStorageData["extensionState"] = initialState;
+
+			await cleanupOldJobs();
+
+			const finalState = await getExtensionState();
+			expect(finalState.activeJobs).toHaveLength(1);
+			expect(finalState.activeJobs[0].id).toBe("new-success");
+		});
+
+		it("should preserve error jobs newer than 24 hours", async () => {
+			const newErrorJob = {
+				id: "new-error",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "error" as const,
+				message: "Failed",
+				startTime: Date.now() - 6 * 60 * 1000, // 6 minutes ago
+				text: "test text",
+			};
+
+			const initialState: ExtensionState = {
+				activeJobs: [newErrorJob],
+				maxConcurrentJobs: 3,
+			};
+			mockStorageData["extensionState"] = initialState;
+
+			await cleanupOldJobs();
+
+			const finalState = await getExtensionState();
+			expect(finalState.activeJobs).toHaveLength(1);
+			expect(finalState.activeJobs[0].id).toBe("new-error");
+		});
+
+		it("should remove error jobs older than 24 hours", async () => {
+			const oldErrorJob = {
+				id: "old-error",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "error" as const,
+				message: "Failed",
+				startTime: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
+				text: "test text",
+			};
+
+			const initialState: ExtensionState = {
+				activeJobs: [oldErrorJob],
+				maxConcurrentJobs: 3,
+			};
+			mockStorageData["extensionState"] = initialState;
+
+			await cleanupOldJobs();
+
+			const finalState = await getExtensionState();
+			expect(finalState.activeJobs).toHaveLength(0);
+		});
+
+		it("should handle mixed job types correctly", async () => {
+			const now = Date.now();
+			const jobs = [
+				{
+					id: "processing-job",
+					tabId: 1,
+					tabInfo: {
+						url: "http://test.com",
+						title: "Test",
+						domain: "test.com",
+					},
+					status: "processing" as const,
+					message: "Processing...",
+					startTime: now - 25 * 60 * 60 * 1000, // 25 hours ago - should keep
+					text: "test text",
+				},
+				{
+					id: "old-success",
+					tabId: 2,
+					tabInfo: {
+						url: "http://test2.com",
+						title: "Test2",
+						domain: "test2.com",
+					},
+					status: "success" as const,
+					message: "Done",
+					startTime: now - 6 * 60 * 1000, // 6 minutes ago - should remove
+					text: "test text 2",
+				},
+				{
+					id: "new-success",
+					tabId: 3,
+					tabInfo: {
+						url: "http://test3.com",
+						title: "Test3",
+						domain: "test3.com",
+					},
+					status: "success" as const,
+					message: "Done",
+					startTime: now - 3 * 60 * 1000, // 3 minutes ago - should keep
+					text: "test text 3",
+				},
+				{
+					id: "new-error",
+					tabId: 4,
+					tabInfo: {
+						url: "http://test4.com",
+						title: "Test4",
+						domain: "test4.com",
+					},
+					status: "error" as const,
+					message: "Failed",
+					startTime: now - 6 * 60 * 1000, // 6 minutes ago - should keep
+					text: "test text 4",
+				},
+				{
+					id: "old-error",
+					tabId: 5,
+					tabInfo: {
+						url: "http://test5.com",
+						title: "Test5",
+						domain: "test5.com",
+					},
+					status: "error" as const,
+					message: "Failed",
+					startTime: now - 25 * 60 * 60 * 1000, // 25 hours ago - should remove
+					text: "test text 5",
+				},
+			];
+
+			const initialState: ExtensionState = {
+				activeJobs: jobs,
+				maxConcurrentJobs: 3,
+			};
+			mockStorageData["extensionState"] = initialState;
+
+			await cleanupOldJobs();
+
+			const finalState = await getExtensionState();
+			expect(finalState.activeJobs).toHaveLength(3);
+
+			const remainingIds = finalState.activeJobs.map((job) => job.id);
+			expect(remainingIds).toContain("processing-job");
+			expect(remainingIds).toContain("new-success");
+			expect(remainingIds).toContain("new-error");
+			expect(remainingIds).not.toContain("old-success");
+			expect(remainingIds).not.toContain("old-error");
 		});
 	});
 });
