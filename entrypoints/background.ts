@@ -74,12 +74,18 @@ const handleMessage = withAsyncLogging(async (
 				});
 				await handleContentExtractedForReview(message.jobId, message.text, message.title, sendResponse);
 				break;
-			case "CONFIRM_TEXT_FOR_TTS":
-				logger.debug("Handling CONFIRM_TEXT_FOR_TTS message", {
+			case "MODAL_CONFIRMED":
+				logger.debug("Handling MODAL_CONFIRMED message", {
 					jobId: message.jobId,
 					textLength: message.text?.length
 				});
-				await handleConfirmTextForTTS(message.jobId, message.text, sendResponse);
+				await handleModalConfirmed(message.jobId, message.text, sendResponse);
+				break;
+			case "MODAL_CANCELLED":
+				logger.debug("Handling MODAL_CANCELLED message", {
+					jobId: message.jobId
+				});
+				await handleModalCancelled(message.jobId, sendResponse);
 				break;
 			case "CONTENT_ERROR":
 				logger.debug("Handling CONTENT_ERROR message", { 
@@ -252,7 +258,7 @@ const handleContentExtractedForReview = withAsyncLogging(async (
 	articleTitle: string,
 	sendResponse: (response?: any) => void,
 ) => {
-	logger.debug("Content extracted for review, waiting for user confirmation", {
+	logger.debug("Content extracted for review, showing modal in page", {
 		jobId,
 		textLength: text.length,
 		articleTitle,
@@ -265,26 +271,57 @@ const handleContentExtractedForReview = withAsyncLogging(async (
 		throw new Error(`Job ${jobId} not found`);
 	}
 
-	// Update job with extracted text, article title, and set status to awaiting confirmation
+	// Update job with extracted text and article title
 	await updateJob(jobId, {
 		text,
 		tabInfo: {
 			...job.tabInfo,
 			articleTitle,
 		},
-		status: "awaiting_confirmation",
-		message: "Text extracted. Please review and confirm to proceed with speech generation.",
+		message: "Text extracted. Please review in the page modal.",
 	});
 
-	sendResponse({ success: true });
+	try {
+		// Inject modal content script into the tab
+		logger.debug("Injecting modal content script", { tabId: job.tabId, jobId });
+		await chrome.scripting.executeScript({
+			target: { tabId: job.tabId },
+			files: ["modal-content.js"],
+		});
+		
+		// Send message to content script to show the modal
+		logger.debug("Sending SHOW_TEXT_PREVIEW_MODAL message to content script");
+		await chrome.tabs.sendMessage(job.tabId, {
+			type: "SHOW_TEXT_PREVIEW_MODAL",
+			job: {
+				id: job.id,
+				text: text,
+				tabInfo: {
+					...job.tabInfo,
+					articleTitle,
+				},
+			},
+		});
+		
+		logger.debug("Modal shown successfully");
+		sendResponse({ success: true });
+	} catch (error) {
+		logger.error("Failed to show modal", error);
+		// Update job status to error
+		await updateJob(jobId, {
+			status: "error",
+			message: "Failed to show text review modal. Please try again.",
+		});
+		throw error;
+	}
 }, 'handleContentExtractedForReview');
 
-const handleConfirmTextForTTS = withAsyncLogging(async (
+const handleModalConfirmed = withAsyncLogging(async (
 	jobId: string,
 	userText: string,
 	sendResponse: (response?: any) => void,
 ) => {
-	logger.debug("User confirmed text for TTS", {
+	logger.debug("User confirmed text for TTS from modal", {
 		jobId,
 		textLength: userText.length,
 		preview: userText.substring(0, 100) + '...'
@@ -309,7 +346,22 @@ const handleConfirmTextForTTS = withAsyncLogging(async (
 	} catch (error) {
 		throw error;
 	}
-}, 'handleConfirmTextForTTS');
+}, 'handleModalConfirmed');
+
+const handleModalCancelled = withAsyncLogging(async (
+	jobId: string,
+	sendResponse: (response?: any) => void,
+) => {
+	logger.debug("User cancelled text confirmation from modal", { jobId });
+	
+	// Update job status to error
+	await updateJob(jobId, {
+		status: "error",
+		message: "Text review cancelled by user",
+	});
+	
+	sendResponse({ success: true });
+}, 'handleModalCancelled');
 
 const handleContentError = withAsyncLogging(async (
 	jobId: string,

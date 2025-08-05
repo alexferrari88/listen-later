@@ -14,7 +14,6 @@ import {
 	retryJob,
 	updateJob,
 } from "../lib/storage";
-import TextPreviewModal from "./TextPreviewModal";
 
 const Popup: React.FC = () => {
 	const [allJobs, setAllJobs] = useState<ProcessingJob[]>([]);
@@ -24,7 +23,6 @@ const Popup: React.FC = () => {
 	const [showOtherJobs, setShowOtherJobs] = useState(false);
 	const [isOptionsConfigured, setIsOptionsConfigured] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
-	const [modalJob, setModalJob] = useState<ProcessingJob | null>(null);
 	const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
 	// Load initial state and check if options are configured
@@ -68,8 +66,6 @@ const Popup: React.FC = () => {
 					logger.debug("Other tab jobs:", otherTabJobs.length);
 				}
 
-				// Check for jobs awaiting confirmation
-				checkForAwaitingConfirmationJobs(extensionState.activeJobs);
 			} catch (error) {
 				logger.error("Failed to load popup state:", error);
 			} finally {
@@ -108,8 +104,6 @@ const Popup: React.FC = () => {
 					});
 				}
 
-				// Check for jobs awaiting confirmation
-				checkForAwaitingConfirmationJobs(newState.activeJobs);
 			}
 			if (changes.extensionOptions) {
 				logger.debug("Options changed, rechecking configuration");
@@ -125,53 +119,6 @@ const Popup: React.FC = () => {
 		return () => chrome.storage.onChanged.removeListener(handleStorageChange);
 	}, [currentTabId]);
 
-	// Check for jobs awaiting confirmation and show modal
-	const checkForAwaitingConfirmationJobs = (jobs: ProcessingJob[]) => {
-		const awaitingJob = jobs.find(job => job.status === "awaiting_confirmation");
-		if (awaitingJob && !modalJob) {
-			logger.debug("Found job awaiting confirmation, showing modal", { jobId: awaitingJob.id });
-			setModalJob(awaitingJob);
-		} else if (!awaitingJob && modalJob) {
-			logger.debug("No more jobs awaiting confirmation, hiding modal");
-			setModalJob(null);
-		}
-	};
-
-	// Handle modal confirmation - send user text to background
-	const handleModalConfirm = async (editedText: string) => {
-		if (!modalJob) return;
-		
-		try {
-			logger.popup.action("User confirmed text for TTS", { 
-				jobId: modalJob.id,
-				textLength: editedText.length 
-			});
-			await chrome.runtime.sendMessage({
-				type: "CONFIRM_TEXT_FOR_TTS",
-				jobId: modalJob.id,
-				text: editedText,
-			});
-			setModalJob(null);
-		} catch (error) {
-			logger.error("Failed to send CONFIRM_TEXT_FOR_TTS message:", error);
-		}
-	};
-
-	// Handle modal cancellation - set job to error
-	const handleModalCancel = async () => {
-		if (!modalJob) return;
-		
-		try {
-			logger.popup.action("User cancelled text confirmation", { jobId: modalJob.id });
-			await updateJob(modalJob.id, {
-				status: "error",
-				message: "Text review cancelled by user",
-			});
-			setModalJob(null);
-		} catch (error) {
-			logger.error("Failed to cancel job:", error);
-		}
-	};
 
 	// Cleanup effect
 	useEffect(() => {
@@ -265,8 +212,6 @@ const Popup: React.FC = () => {
 		switch (job.status) {
 			case "processing":
 				return { emoji: "⏳", text: "Processing", color: "#4285f4" };
-			case "awaiting_confirmation":
-				return { emoji: "📝", text: "Review Required", color: "#ea8600" };
 			case "success":
 				return { emoji: "✅", text: "Completed", color: "#137333" };
 			case "error":
@@ -514,14 +459,6 @@ const Popup: React.FC = () => {
 				</div>
 			</div>
 			
-			{/* Text Preview Modal */}
-			{modalJob && (
-				<TextPreviewModal
-					job={modalJob}
-					onConfirm={handleModalConfirm}
-					onCancel={handleModalCancel}
-				/>
-			)}
 		</div>
 	);
 };
