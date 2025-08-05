@@ -84,6 +84,12 @@ interface ExtensionOptions {
 - Uses `chrome.scripting.executeScript()` to inject `content.js`
 - Content script extracts main article content using bundled Readability.js
 
+**⚠️ CRITICAL: Content Script Match Patterns**
+- NEVER use `matches: ['<all_urls>']` in content scripts - this causes mass tab reloads on extension install
+- Use restrictive patterns like `matches: ['http://localhost:3000/*']` for programmatically injected scripts
+- Chrome prepares extension context for all matching tabs during installation, causing system freezes
+- Since we use programmatic injection, the match pattern should be minimal and non-disruptive
+
 ### API Integration
 - Uses Google Gemini API with multimodal audio generation
 - API endpoint: `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`
