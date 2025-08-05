@@ -1,49 +1,67 @@
+// Content script for extracting readable content from web pages
 // This content script is injected programmatically by the background script
 // Readability.js is already injected before this script, so window.Readability should be available
 
-// Simple logging for development mode (can't import modules in content script)
-const isDev = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version_name?.includes('dev');
-const log = {
-	debug: (msg, ...args) => isDev && console.log(`[CONTENT] ${msg}`, ...args),
-	info: (msg, ...args) => isDev && console.log(`[CONTENT] ${msg}`, ...args),
-	error: (msg, ...args) => console.error(`[CONTENT] ${msg}`, ...args)
-};
+import { logger } from '../lib/logger';
 
-log.info("Content script loaded");
-log.debug("Environment check:", { isDev, hasReadability: !!window.Readability });
-extractContent();
+// Extend window object to include Readability and currentJobId
+declare global {
+	interface Window {
+		Readability: any;
+		currentJobId?: string;
+	}
+}
+
+export default defineContentScript({
+	matches: ['<all_urls>'],
+	main() {
+		logger.info("Content script loaded");
+		logger.debug("Environment check:", { 
+			hasReadability: !!window.Readability,
+			hasJobId: !!window.currentJobId 
+		});
+		extractContent();
+	},
+});
 
 function extractContent() {
 	try {
-		log.debug("Starting content extraction");
-		log.debug("Page info:", {
+		logger.debug("Starting content extraction");
+		logger.debug("Page info:", {
 			url: window.location.href,
 			title: document.title,
-			documentLength: document.body?.innerText?.length || 0
+			documentLength: document.body?.innerText?.length || 0,
+			jobId: window.currentJobId
 		});
-		
+
+		// Check if we have a job ID (injected by background script)
+		if (!window.currentJobId) {
+			logger.error("No job ID provided by background script");
+			throw new Error("No job ID provided - content script not properly initialized");
+		}
+
 		// Readability should already be available
 		if (!window.Readability) {
-			log.error("Readability.js not available");
+			logger.error("Readability.js not available");
 			throw new Error("Readability.js not available");
 		}
-		log.debug("Readability.js is available");
+		logger.debug("Readability.js is available");
 
 		// Create a copy of the document for Readability
-		log.debug("Cloning document for Readability processing");
+		logger.debug("Cloning document for Readability processing");
 		const documentClone = document.cloneNode(true);
 
 		// Create Readability instance
-		log.debug("Creating Readability instance");
+		logger.debug("Creating Readability instance");
 		const reader = new window.Readability(documentClone, {
-			debug: isDev,
+			debug: false, // We'll handle our own logging
 			charThreshold: 500,
 		});
 
 		// Parse the article
-		log.debug("Parsing article with Readability");
+		logger.debug("Parsing article with Readability");
 		const article = reader.parse();
-		log.debug("Readability parsing complete", {
+		logger.debug("Readability parsing complete", {
 			hasArticle: !!article,
 			hasContent: !!article?.textContent,
 			title: article?.title,
@@ -51,48 +69,52 @@ function extractContent() {
 		});
 
 		if (article && article.textContent) {
-			log.debug("Processing extracted content");
+			logger.debug("Processing extracted content");
 			// Clean up the text content
 			const cleanText = article.textContent
 				.replace(/\s+/g, " ")
 				.trim()
 				.substring(0, 100000); // Limit to ~100k characters (well within 32k token API limit)
 
-			log.debug("Text processing complete", {
+			logger.debug("Text processing complete", {
 				originalLength: article.textContent.length,
 				cleanedLength: cleanText.length,
 				preview: cleanText.substring(0, 100) + '...'
 			});
 
 			if (cleanText.length > 50) {
-				log.info("Sending extracted content to background script", {
+				logger.info("Sending extracted content to background script", {
+					jobId: window.currentJobId,
 					textLength: cleanText.length,
 					title: article.title || document.title
 				});
-				// Send extracted content to background script
+				// Send extracted content to background script with job ID
 				chrome.runtime.sendMessage({
 					type: "CONTENT_EXTRACTED",
+					jobId: window.currentJobId,
 					text: cleanText,
 					title: article.title || document.title,
 				});
 			} else {
-				log.error("Insufficient content", { length: cleanText.length });
+				logger.error("Insufficient content", { length: cleanText.length });
 				throw new Error("Not enough readable content found on this page");
 			}
 		} else {
-			log.error("No readable content extracted", { article });
+			logger.error("No readable content extracted", { article });
 			throw new Error("Could not extract readable content from this page");
 		}
 	} catch (error) {
-		log.error("Content extraction failed:", error);
-		log.debug("Error details:", {
+		logger.error("Content extraction failed:", error);
+		logger.debug("Error details:", {
 			message: error instanceof Error ? error.message : 'Unknown error',
 			stack: error instanceof Error ? error.stack : undefined,
 			pageUrl: window.location.href,
-			pageTitle: document.title
+			pageTitle: document.title,
+			jobId: window.currentJobId
 		});
 		chrome.runtime.sendMessage({
 			type: "CONTENT_ERROR",
+			jobId: window.currentJobId,
 			error:
 				error instanceof Error
 					? error.message

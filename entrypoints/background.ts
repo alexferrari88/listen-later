@@ -1,4 +1,13 @@
-import { getExtensionOptions, setExtensionState, sanitizeErrorMessage } from "../lib/storage";
+import { 
+	getExtensionOptions, 
+	sanitizeErrorMessage,
+	createJob,
+	updateJob,
+	getJob,
+	canStartNewJob,
+	cleanupOldJobs,
+	type ProcessingJob 
+} from "../lib/storage";
 import { logger, withAsyncLogging } from "../lib/logger";
 
 export default defineBackground(() => {
@@ -13,6 +22,15 @@ export default defineBackground(() => {
 			chrome.runtime.openOptionsPage();
 		}
 	});
+
+	// Periodic cleanup of old jobs
+	setInterval(async () => {
+		try {
+			await cleanupOldJobs();
+		} catch (error) {
+			logger.error("Failed to cleanup old jobs", error);
+		}
+	}, 60000); // Run every minute
 
 	// Main message listener
 	chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -38,18 +56,22 @@ const handleMessage = withAsyncLogging(async (
 		switch (message.type) {
 			case "START_TTS":
 				logger.debug("Handling START_TTS message");
-				await handleStartTTS(sendResponse);
+				await handleStartTTS(sender.tab, sendResponse);
 				break;
 			case "CONTENT_EXTRACTED":
 				logger.debug("Handling CONTENT_EXTRACTED message", {
+					jobId: message.jobId,
 					textLength: message.text?.length,
 					title: message.title
 				});
-				await handleContentExtracted(message.text, sendResponse);
+				await handleContentExtracted(message.jobId, message.text, message.title, sendResponse);
 				break;
 			case "CONTENT_ERROR":
-				logger.debug("Handling CONTENT_ERROR message", { error: message.error });
-				await handleContentError(message.error, sendResponse);
+				logger.debug("Handling CONTENT_ERROR message", { 
+					jobId: message.jobId,
+					error: message.error 
+				});
+				await handleContentError(message.jobId, message.error, sendResponse);
 				break;
 			default:
 				logger.warn("Unknown message type:", message.type);
@@ -58,10 +80,13 @@ const handleMessage = withAsyncLogging(async (
 	} catch (error) {
 		logger.error("Error handling message:", error);
 		const sanitizedMessage = sanitizeErrorMessage(error);
-		await setExtensionState({
-			status: "error",
-			message: sanitizedMessage,
-		});
+		// If we have a job ID in the message, update that job's status
+		if (message.jobId) {
+			await updateJob(message.jobId, {
+				status: "error",
+				message: sanitizedMessage,
+			});
+		}
 		sendResponse({
 			success: false,
 			error: sanitizedMessage,
@@ -69,63 +94,88 @@ const handleMessage = withAsyncLogging(async (
 	}
 }, 'handleMessage');
 
-const handleStartTTS = withAsyncLogging(async (sendResponse: (response?: any) => void) => {
+const handleStartTTS = withAsyncLogging(async (tab: chrome.tabs.Tab | undefined, sendResponse: (response?: any) => void) => {
 	logger.debug("Starting TTS process");
 	
-	// Update state to processing
-	const initialState = {
-		status: "processing" as const,
-		message: "Initializing content extraction...",
-	};
-	logger.background.state(initialState);
-	await setExtensionState(initialState);
+	// Check if we can start a new job
+	if (!(await canStartNewJob())) {
+		throw new Error("Maximum concurrent jobs (3) already running. Please wait for one to complete.");
+	}
 
-	// Get active tab
-	logger.debug("Querying for active tab");
-	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-	logger.debug("Active tab found", {
-		id: tab?.id,
-		url: tab?.url,
-		title: tab?.title
+	// Use provided tab or get active tab
+	let targetTab = tab;
+	if (!targetTab) {
+		logger.debug("No tab provided, querying for active tab");
+		const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+		targetTab = activeTab;
+	}
+
+	logger.debug("Target tab found", {
+		id: targetTab?.id,
+		url: targetTab?.url,
+		title: targetTab?.title
 	});
 
-	if (!tab?.id) {
-		throw new Error("No active tab found");
+	if (!targetTab?.id || !targetTab.url || !targetTab.title) {
+		throw new Error("No valid tab found or tab missing required information");
 	}
+
+	// Create job with preliminary data (text will be added when content is extracted)
+	const job = await createJob(
+		targetTab.id,
+		targetTab.url,
+		targetTab.title,
+		"", // Empty text for now, will be filled by content script
+	);
+
+	logger.debug("Created job for TTS process", { jobId: job.id, tabId: targetTab.id });
 
 	// Inject Readability.js first, then content script
 	try {
-		// Update status for Readability injection
-		await setExtensionState({
-			status: "processing",
+		// Update job status for Readability injection
+		await updateJob(job.id, {
 			message: "Loading page analysis tools...",
 		});
 		
-		logger.background.injection("Starting Readability.js injection", { tabId: tab.id });
+		logger.background.injection("Starting Readability.js injection", { tabId: targetTab.id, jobId: job.id });
 		// First inject Readability.js into isolated world
 		await chrome.scripting.executeScript({
-			target: { tabId: tab.id },
+			target: { tabId: targetTab.id },
 			files: ["lib/readability.js"],
 		});
 		logger.background.injection("Readability.js injected successfully");
 
-		// Update status for content script injection
-		await setExtensionState({
-			status: "processing",
+		// Update job status for content script injection
+		await updateJob(job.id, {
 			message: "Analyzing page content...",
 		});
 
-		logger.background.injection("Starting content script injection", { tabId: tab.id });
-		// Then inject content script (which can now use Readability and Chrome APIs)
+		logger.background.injection("Starting content script injection", { tabId: targetTab.id, jobId: job.id });
+		// Inject content script with job ID
 		await chrome.scripting.executeScript({
-			target: { tabId: tab.id },
+			target: { tabId: targetTab.id },
 			files: ["content.js"],
 		});
+		
+		// Also inject the job ID so content script knows which job it belongs to
+		await chrome.scripting.executeScript({
+			target: { tabId: targetTab.id },
+			func: (jobId: string) => {
+				(globalThis as any).currentJobId = jobId;
+			},
+			args: [job.id],
+		});
+		
 		logger.background.injection("Content script injected successfully");
 
-		sendResponse({ success: true });
+		sendResponse({ success: true, jobId: job.id });
 	} catch (error) {
 		logger.background.injection("Injection failed", error);
+		// Update job status to error
+		await updateJob(job.id, {
+			status: "error",
+			message: "Failed to inject content analysis scripts",
+		});
 		throw new Error(
 			`Failed to inject content script: ${error instanceof Error ? error.message : "Unknown error"}`,
 		);
@@ -133,23 +183,36 @@ const handleStartTTS = withAsyncLogging(async (sendResponse: (response?: any) =>
 }, 'handleStartTTS');
 
 const handleContentExtracted = withAsyncLogging(async (
+	jobId: string,
 	text: string,
+	articleTitle: string,
 	sendResponse: (response?: any) => void,
 ) => {
 	logger.debug("Content extracted, preparing for speech generation", {
+		jobId,
 		textLength: text.length,
+		articleTitle,
 		preview: text.substring(0, 100) + '...'
 	});
 	
-	const processingState = {
-		status: "processing" as const,
+	// Get the job and update it with extracted text
+	const job = await getJob(jobId);
+	if (!job) {
+		throw new Error(`Job ${jobId} not found`);
+	}
+
+	// Update job with extracted text and article title
+	await updateJob(jobId, {
+		text,
+		tabInfo: {
+			...job.tabInfo,
+			articleTitle,
+		},
 		message: "Preparing speech generation request...",
-	};
-	logger.background.state(processingState);
-	await setExtensionState(processingState);
+	});
 
 	try {
-		await generateSpeech(text);
+		await generateSpeech(jobId);
 		sendResponse({ success: true });
 	} catch (error) {
 		throw error;
@@ -157,23 +220,35 @@ const handleContentExtracted = withAsyncLogging(async (
 }, 'handleContentExtracted');
 
 const handleContentError = withAsyncLogging(async (
+	jobId: string,
 	error: string,
 	sendResponse: (response?: any) => void,
 ) => {
-	logger.debug("Content extraction error received", { error });
+	logger.debug("Content extraction error received", { jobId, error });
 	
 	const sanitizedMessage = sanitizeErrorMessage(new Error(error));
-	const errorState = {
-		status: "error" as const,
+	
+	// Update the specific job's status to error
+	await updateJob(jobId, {
+		status: "error",
 		message: sanitizedMessage,
-	};
-	logger.background.state(errorState);
-	await setExtensionState(errorState);
+	});
+	
 	sendResponse({ success: false, error: sanitizedMessage });
 }, 'handleContentError');
 
-const generateSpeech = withAsyncLogging(async (text: string) => {
-	logger.debug("Starting speech generation", { textLength: text.length });
+const generateSpeech = withAsyncLogging(async (jobId: string) => {
+	// Get the job data
+	const job = await getJob(jobId);
+	if (!job || !job.text) {
+		throw new Error(`Job ${jobId} not found or missing text`);
+	}
+
+	logger.debug("Starting speech generation", { 
+		jobId,
+		textLength: job.text.length,
+		filename: job.filename
+	});
 	
 	// Get user options
 	logger.debug("Loading extension options");
@@ -190,18 +265,18 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 		);
 	}
 
-	// Update status for API call
-	await setExtensionState({
-		status: "processing",
+	// Update job status for API call
+	await updateJob(jobId, {
 		message: "Sending text to AI for speech generation...",
 	});
 
 	// Make API call to Gemini
 	const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${options.modelName}:generateContent`;
 	logger.background.api(endpoint, undefined, {
+		jobId,
 		modelName: options.modelName,
 		voice: options.voice,
-		textLength: text.length
+		textLength: job.text.length
 	});
 	
 	const requestBody = {
@@ -209,7 +284,7 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 			{
 				parts: [
 					{
-						text: `Please read the following text aloud: ${text}`,
+						text: `Please read the following text aloud: ${job.text}`,
 					},
 				],
 			},
@@ -227,9 +302,8 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 	};
 	logger.debug("Sending API request", { endpoint, requestBody });
 	
-	// Update status during API call
-	await setExtensionState({
-		status: "processing",
+	// Update job status during API call
+	await updateJob(jobId, {
 		message: "AI is generating speech - this may take 30-60 seconds...",
 	});
 	
@@ -247,6 +321,7 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 	if (!response.ok) {
 		const errorData = await response.json().catch(() => ({}));
 		logger.error("API request failed", {
+			jobId,
 			status: response.status,
 			statusText: response.statusText,
 			errorData
@@ -258,6 +333,7 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 
 	const data = await response.json();
 	logger.debug("API response received", {
+		jobId,
 		hasCandidates: !!data.candidates,
 		candidateCount: data.candidates?.length || 0,
 		hasAudioData: !!data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
@@ -266,47 +342,60 @@ const generateSpeech = withAsyncLogging(async (text: string) => {
 	const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
 	if (!audioData) {
-		logger.error("No audio data in API response", data);
+		logger.error("No audio data in API response", { jobId, data });
 		throw new Error("No audio data received from Gemini API");
 	}
 
 	// Convert base64 to blob and download
-	logger.debug("Starting audio download", { audioDataLength: audioData.length });
+	logger.debug("Starting audio download", { 
+		jobId,
+		audioDataLength: audioData.length,
+		filename: job.filename
+	});
 	
-	// Update status for download
-	await setExtensionState({
-		status: "processing",
+	// Update job status for download
+	await updateJob(jobId, {
 		message: "Preparing audio file for download...",
 	});
 	
-	await downloadAudio(audioData);
+	await downloadAudio(jobId, audioData);
 
-	const successState = {
-		status: "success" as const,
+	// Update job to success status
+	await updateJob(jobId, {
+		status: "success",
 		message: "Speech generated and downloaded successfully!",
-	};
-	logger.background.state(successState);
-	await setExtensionState(successState);
+	});
+	
+	logger.debug("Speech generation completed successfully", { jobId });
 }, 'generateSpeech');
 
-const downloadAudio = withAsyncLogging(async (base64Data: string) => {
-	logger.debug("Converting base64 to data URL", { dataLength: base64Data.length });
+const downloadAudio = withAsyncLogging(async (jobId: string, base64Data: string) => {
+	// Get the job to access the filename
+	const job = await getJob(jobId);
+	if (!job) {
+		throw new Error(`Job ${jobId} not found`);
+	}
+
+	logger.debug("Converting base64 to data URL", { 
+		jobId,
+		dataLength: base64Data.length,
+		filename: job.filename
+	});
 	
 	// Create data URL directly from base64 data
 	const dataUrl = `data:audio/wav;base64,${base64Data}`;
 	logger.debug("Data URL created");
 
-	// Generate filename with timestamp
-	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-	const filename = `listen-later-${timestamp}.wav`;
-	logger.debug("Generated filename", { filename });
+	// Use the filename from the job (already includes smart title/domain logic)
+	const filename = job.filename!;
+	logger.debug("Using job filename", { jobId, filename });
 
 	// Download using chrome.downloads API with data URL
-	logger.debug("Starting download", { filename });
+	logger.debug("Starting download", { jobId, filename });
 	const downloadId = await chrome.downloads.download({
 		url: dataUrl,
 		filename: filename,
 		saveAs: false,
 	});
-	logger.debug("Download initiated", { downloadId });
+	logger.debug("Download initiated", { jobId, downloadId, filename });
 }, 'downloadAudio');

@@ -2,34 +2,61 @@ import type React from "react";
 import { useEffect, useState, useRef } from "react";
 import {
 	areOptionsConfigured,
+	type ProcessingJob,
 	type ExtensionState,
 	getExtensionState,
-	resetExtensionState,
+	getJobsForTab,
+	getJobsByStatus,
+	removeJob,
+	retryJob,
+	cleanupOldJobs,
 } from "../lib/storage";
 import { logger } from "../lib/logger";
 
 const Popup: React.FC = () => {
-	const [state, setState] = useState<ExtensionState>({ status: "idle" });
+	const [allJobs, setAllJobs] = useState<ProcessingJob[]>([]);
+	const [currentTabId, setCurrentTabId] = useState<number | null>(null);
+	const [currentTabJobs, setCurrentTabJobs] = useState<ProcessingJob[]>([]);
+	const [otherJobs, setOtherJobs] = useState<ProcessingJob[]>([]);
+	const [showOtherJobs, setShowOtherJobs] = useState(false);
 	const [isOptionsConfigured, setIsOptionsConfigured] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
-	const [elapsedTime, setElapsedTime] = useState(0);
-	const [processingStage, setProcessingStage] = useState<string>("");
 	const intervalRef = useRef<NodeJS.Timeout | null>(null);
-	const startTimeRef = useRef<number | null>(null);
 
 	// Load initial state and check if options are configured
 	useEffect(() => {
 		const loadState = async () => {
 			try {
 				logger.popup.action("Loading initial state");
-				const [currentState, optionsConfigured] = await Promise.all([
+				
+				// Get current tab ID
+				const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+				const tabId = tab?.id || null;
+				setCurrentTabId(tabId);
+				
+				// Load jobs and options
+				const [extensionState, optionsConfigured] = await Promise.all([
 					getExtensionState(),
 					areOptionsConfigured(),
 				]);
-				logger.popup.state(currentState);
+				
 				logger.debug("Options configured:", optionsConfigured);
-				setState(currentState);
+				logger.debug("Current tab ID:", tabId);
+				logger.debug("Total jobs found:", extensionState.activeJobs.length);
+				
+				setAllJobs(extensionState.activeJobs);
 				setIsOptionsConfigured(optionsConfigured);
+				
+				// Separate current tab jobs from others
+				if (tabId) {
+					const tabJobs = extensionState.activeJobs.filter(job => job.tabId === tabId);
+					const otherTabJobs = extensionState.activeJobs.filter(job => job.tabId !== tabId);
+					setCurrentTabJobs(tabJobs);
+					setOtherJobs(otherTabJobs);
+					logger.debug("Current tab jobs:", tabJobs.length);
+					logger.debug("Other tab jobs:", otherTabJobs.length);
+				}
+				
 			} catch (error) {
 				logger.error("Failed to load popup state:", error);
 			} finally {
@@ -46,9 +73,23 @@ const Popup: React.FC = () => {
 			[key: string]: chrome.storage.StorageChange;
 		}) => {
 			logger.debug("Storage changed", changes);
-			if (changes.extensionState) {
-				logger.popup.state(changes.extensionState.newValue);
-				setState(changes.extensionState.newValue);
+			if (changes.extensionState && changes.extensionState.newValue) {
+				const newState: ExtensionState = changes.extensionState.newValue;
+				logger.debug("Jobs updated", { totalJobs: newState.activeJobs.length });
+				
+				setAllJobs(newState.activeJobs);
+				
+				// Update current tab and other jobs
+				if (currentTabId) {
+					const tabJobs = newState.activeJobs.filter(job => job.tabId === currentTabId);
+					const otherTabJobs = newState.activeJobs.filter(job => job.tabId !== currentTabId);
+					setCurrentTabJobs(tabJobs);
+					setOtherJobs(otherTabJobs);
+					logger.debug("Updated job distribution", { 
+						currentTabJobs: tabJobs.length, 
+						otherJobs: otherTabJobs.length 
+					});
+				}
 			}
 			if (changes.extensionOptions) {
 				logger.debug("Options changed, rechecking configuration");
@@ -62,50 +103,16 @@ const Popup: React.FC = () => {
 
 		chrome.storage.onChanged.addListener(handleStorageChange);
 		return () => chrome.storage.onChanged.removeListener(handleStorageChange);
-	}, []);
+	}, [currentTabId]);
 
-	// Timer effect for processing state
+	// Cleanup effect
 	useEffect(() => {
-		if (state.status === "processing") {
-			// Start timer
-			startTimeRef.current = Date.now();
-			setElapsedTime(0);
-			
-			// Update processing stage based on message
-			const message = state.message || "";
-			if (message.includes("extraction") || message.includes("Analyzing") || message.includes("Loading")) {
-				setProcessingStage("Extracting content");
-			} else if (message.includes("speech") || message.includes("AI") || message.includes("generating")) {
-				setProcessingStage("Generating speech");
-			} else if (message.includes("download") || message.includes("Preparing audio")) {
-				setProcessingStage("Finalizing");
-			} else {
-				setProcessingStage("Processing");
-			}
-			
-			intervalRef.current = setInterval(() => {
-				if (startTimeRef.current) {
-					const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-					setElapsedTime(elapsed);
-				}
-			}, 1000);
-		} else {
-			// Clear timer
-			if (intervalRef.current) {
-				clearInterval(intervalRef.current);
-				intervalRef.current = null;
-			}
-			startTimeRef.current = null;
-			setElapsedTime(0);
-			setProcessingStage("");
-		}
-
 		return () => {
 			if (intervalRef.current) {
 				clearInterval(intervalRef.current);
 			}
 		};
-	}, [state.status, state.message]);
+	}, []);
 
 	const handleGenerateClick = async () => {
 		try {
@@ -117,38 +124,152 @@ const Popup: React.FC = () => {
 		}
 	};
 
-	const handleTryAgain = async () => {
+	const handleRetryJob = async (jobId: string) => {
 		try {
-			logger.popup.action("Try again button clicked");
-			await resetExtensionState();
-			logger.debug("Extension state reset successfully");
+			logger.popup.action("Retry job button clicked", { jobId });
+			await retryJob(jobId);
+			logger.debug("Job retried successfully", { jobId });
 		} catch (error) {
-			logger.error("Failed to reset state:", error);
+			logger.error("Failed to retry job:", error);
 		}
 	};
 
-	const handleCancel = async () => {
+	const handleRemoveJob = async (jobId: string) => {
 		try {
-			logger.popup.action("Cancel button clicked");
-			await resetExtensionState();
-			logger.debug("Processing cancelled successfully");
+			logger.popup.action("Remove job button clicked", { jobId });
+			await removeJob(jobId);
+			logger.debug("Job removed successfully", { jobId });
 		} catch (error) {
-			logger.error("Failed to cancel processing:", error);
+			logger.error("Failed to remove job:", error);
 		}
 	};
 
-	const formatElapsedTime = (seconds: number): string => {
-		if (seconds < 60) {
-			return `${seconds}s`;
+	const handleCleanupJobs = async () => {
+		try {
+			logger.popup.action("Cleanup jobs button clicked");
+			await cleanupOldJobs();
+			logger.debug("Old jobs cleaned up successfully");
+		} catch (error) {
+			logger.error("Failed to cleanup jobs:", error);
 		}
-		const minutes = Math.floor(seconds / 60);
-		const remainingSeconds = seconds % 60;
+	};
+
+	const formatElapsedTime = (startTime: number): string => {
+		const elapsed = Math.floor((Date.now() - startTime) / 1000);
+		if (elapsed < 60) {
+			return `${elapsed}s`;
+		}
+		const minutes = Math.floor(elapsed / 60);
+		const remainingSeconds = elapsed % 60;
 		return `${minutes}m ${remainingSeconds}s`;
+	};
+
+	const getJobDisplayName = (job: ProcessingJob): string => {
+		return job.tabInfo.articleTitle || job.tabInfo.title || job.tabInfo.domain;
+	};
+
+	const getJobStatus = (job: ProcessingJob): { emoji: string; text: string; color: string } => {
+		switch (job.status) {
+			case "processing":
+				return { emoji: "⏳", text: "Processing", color: "#4285f4" };
+			case "success":
+				return { emoji: "✅", text: "Completed", color: "#137333" };
+			case "error":
+				return { emoji: "❌", text: "Failed", color: "#d93025" };
+			default:
+				return { emoji: "⏳", text: "Processing", color: "#4285f4" };
+		}
+	};
+
+	const getProcessingStage = (message?: string): string => {
+		if (!message) return "Processing";
+		if (message.includes("extraction") || message.includes("Analyzing") || message.includes("Loading")) {
+			return "Extracting content";
+		} else if (message.includes("speech") || message.includes("AI") || message.includes("generating")) {
+			return "Generating speech";
+		} else if (message.includes("download") || message.includes("Preparing audio")) {
+			return "Finalizing";
+		}
+		return "Processing";
 	};
 
 	const openOptionsPage = () => {
 		logger.popup.action("Settings button clicked");
 		chrome.runtime.openOptionsPage();
+	};
+
+	// Helper components
+	const JobCard: React.FC<{ 
+		job: ProcessingJob; 
+		isCurrentTab: boolean; 
+		showTabInfo: boolean;
+	}> = ({ job, isCurrentTab, showTabInfo }) => {
+		const status = getJobStatus(job);
+		const displayName = getJobDisplayName(job);
+		const elapsed = formatElapsedTime(job.startTime);
+		const stage = getProcessingStage(job.message);
+		
+		return (
+			<div style={{
+				...jobCardStyle,
+				...(isCurrentTab ? currentTabJobStyle : {}),
+			}}>
+				<div style={jobHeaderStyle}>
+					<div style={jobStatusStyle}>
+						<span style={{ fontSize: "16px" }}>{status.emoji}</span>
+						<span style={{ color: status.color, fontWeight: "500", fontSize: "14px" }}>
+							{status.text}
+						</span>
+					</div>
+					<div style={jobTimeStyle}>
+						{elapsed}
+					</div>
+				</div>
+				
+				{showTabInfo && (
+					<div style={jobTitleStyle}>
+						{displayName}
+					</div>
+				)}
+				
+				{job.status === "processing" && (
+					<div style={jobMessageStyle}>
+						{stage}: {job.message}
+					</div>
+				)}
+				
+				{job.status === "error" && (
+					<div style={jobErrorStyle}>
+						{job.message}
+					</div>
+				)}
+				
+				{job.status === "success" && job.filename && (
+					<div style={jobSuccessStyle}>
+						Downloaded: {job.filename}
+					</div>
+				)}
+				
+				<div style={jobActionsStyle}>
+					{job.status === "error" && (
+						<button 
+							onClick={() => handleRetryJob(job.id)} 
+							style={jobActionButtonStyle}
+						>
+							Retry
+						</button>
+					)}
+					{job.status !== "processing" && (
+						<button 
+							onClick={() => handleRemoveJob(job.id)} 
+							style={jobRemoveButtonStyle}
+						>
+							Remove
+						</button>
+					)}
+				</div>
+			</div>
+		);
 	};
 
 	if (isLoading) {
@@ -186,169 +307,88 @@ const Popup: React.FC = () => {
 		);
 	}
 
-	// Error state
-	if (state.status === "error") {
-		return (
-			<div style={containerStyle}>
-				<div style={headerStyle}>
-					<h2 style={titleStyle}>Listen Later</h2>
-				</div>
-				<div style={contentStyle}>
-					<div style={errorStyle}>
-						<p style={{ margin: "0 0 10px 0" }}>❌ Error</p>
-						<p style={{ margin: "0 0 20px 0", fontSize: "14px" }}>
-							{state.message || "Something went wrong. Please try again."}
-						</p>
-						<div style={{ display: "flex", gap: "10px" }}>
-							<button onClick={handleTryAgain} style={primaryButtonStyle}>
-								Try Again
-							</button>
-							<button onClick={openOptionsPage} style={secondaryButtonStyle}>
-								Settings
-							</button>
-						</div>
-					</div>
-				</div>
-			</div>
-		);
-	}
+	// Get active job for current tab
+	const currentTabJob = currentTabJobs.find(job => job.status === "processing") || currentTabJobs[0];
+	const hasCurrentTabJob = !!currentTabJob;
+	const hasOtherJobs = otherJobs.length > 0;
+	const completedJobs = allJobs.filter(job => job.status === "success" || job.status === "error");
 
-	// Processing state
-	if (state.status === "processing") {
-		const isLongRunning = elapsedTime > 10;
-		const estimatedTime = processingStage.includes("speech") ? "1-10 min" : "5-10s";
-		
-		return (
-			<div style={containerStyle}>
-				<div style={headerStyle}>
-					<h2 style={titleStyle}>Listen Later</h2>
-				</div>
-				<div style={contentStyle}>
-					<div style={processingStyle}>
-						{/* Animated loading indicator */}
-						<div style={loadingIndicatorStyle}>
-							<div style={modernSpinnerStyle}></div>
-						</div>
-						
-						{/* Stage indicator */}
-						<div style={stageIndicatorStyle}>
-							<div style={stageProgressStyle}>
-								<div 
-									style={{
-										...stageStepStyle, 
-										...(processingStage.includes("content") ? activeStageStyle : {}),
-										...(processingStage.includes("speech") || processingStage.includes("Finalizing") ? { backgroundColor: "#4caf50", border: "2px solid #4caf50", color: "white" } : {})
-									}}
-								>
-									1
-								</div>
-								<div style={stageLineStyle}></div>
-								<div 
-									style={{
-										...stageStepStyle, 
-										...(processingStage.includes("speech") ? activeStageStyle : {}),
-										...(processingStage.includes("Finalizing") ? { backgroundColor: "#4caf50", border: "2px solid #4caf50", color: "white" } : {})
-									}}
-								>
-									2
-								</div>
-								<div style={stageLineStyle}></div>
-								<div 
-									style={{
-										...stageStepStyle, 
-										...(processingStage.includes("Finalizing") ? activeStageStyle : {})
-									}}
-								>
-									3
-								</div>
-							</div>
-							<div style={stageLabelStyle}>
-								<span style={stageLabelTextStyle}>Extract</span>
-								<span style={stageLabelTextStyle}>Generate</span>
-								<span style={stageLabelTextStyle}>Download</span>
-							</div>
-						</div>
-						
-						{/* Status text */}
-						<p style={processingTitleStyle}>{processingStage}</p>
-						<p style={processingSubtitleStyle}>
-							{state.message || "Your audio will download automatically when ready"}
-						</p>
-						
-						{/* Time and progress info */}
-						<div style={timeInfoStyle}>
-							<div style={timeElapsedStyle}>
-								Time elapsed: {formatElapsedTime(elapsedTime)}
-							</div>
-							{!isLongRunning && (
-								<div style={estimateStyle}>
-									Estimated: {estimatedTime}
-								</div>
-							)}
-							{isLongRunning && (
-								<div style={longRunningStyle}>
-									⏳ Processing can take up to 10 minutes for longer texts.<br/>
-									You can close this popup and continue browsing - the download will start automatically when ready.
-								</div>
-							)}
-						</div>
-						
-						{/* Cancel button */}
-						<div style={{ marginTop: "20px" }}>
-							<button onClick={handleCancel} style={cancelButtonStyle}>
-								Cancel
-							</button>
-						</div>
-					</div>
-				</div>
-			</div>
-		);
-	}
-
-	// Success state
-	if (state.status === "success") {
-		return (
-			<div style={containerStyle}>
-				<div style={headerStyle}>
-					<h2 style={titleStyle}>Listen Later</h2>
-				</div>
-				<div style={contentStyle}>
-					<div style={successStyle}>
-						<p style={{ margin: "0 0 10px 0" }}>✅ Success!</p>
-						<p style={{ margin: "0 0 20px 0", fontSize: "14px" }}>
-							{state.message || "Audio file has been downloaded successfully."}
-						</p>
-						<div style={{ display: "flex", gap: "10px" }}>
-							<button onClick={handleGenerateClick} style={primaryButtonStyle}>
-								Generate Again
-							</button>
-							<button onClick={openOptionsPage} style={secondaryButtonStyle}>
-								Settings
-							</button>
-						</div>
-					</div>
-				</div>
-			</div>
-		);
-	}
-
-	// Default idle state
 	return (
 		<div style={containerStyle}>
 			<div style={headerStyle}>
 				<h2 style={titleStyle}>Listen Later</h2>
+				{allJobs.length > 0 && (
+					<div style={headerBadgeStyle}>
+						{allJobs.filter(job => job.status === "processing").length} active
+					</div>
+				)}
 			</div>
 			<div style={contentStyle}>
-				<p style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#666" }}>
-					Convert the current page to speech
-				</p>
-				<div style={{ display: "flex", gap: "10px" }}>
-					<button onClick={handleGenerateClick} style={primaryButtonStyle}>
-						Generate Speech
-					</button>
-					<button onClick={openOptionsPage} style={secondaryButtonStyle}>
-						Settings
-					</button>
+				{/* Current Tab Status */}
+				{hasCurrentTabJob ? (
+					<div style={currentTabSectionStyle}>
+						<h3 style={sectionTitleStyle}>Current Page</h3>
+						<JobCard 
+							job={currentTabJob} 
+							isCurrentTab={true} 
+							showTabInfo={false}
+						/>
+					</div>
+				) : (
+					<div style={idleSectionStyle}>
+						<p style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#666" }}>
+							Convert the current page to speech
+						</p>
+						<button onClick={handleGenerateClick} style={primaryButtonStyle}>
+							Generate Speech
+						</button>
+					</div>
+				)}
+
+				{/* Other Active Jobs */}
+				{hasOtherJobs && (
+					<div style={otherJobsSectionStyle}>
+						<button 
+							onClick={() => setShowOtherJobs(!showOtherJobs)}
+							style={collapsibleButtonStyle}
+						>
+							<span>Other Tabs ({otherJobs.length})</span>
+							<span style={{ transform: showOtherJobs ? "rotate(180deg)" : "rotate(0deg)" }}>
+								▼
+							</span>
+						</button>
+						{showOtherJobs && (
+							<div style={otherJobsListStyle}>
+								{otherJobs.map(job => (
+									<JobCard 
+										key={job.id} 
+										job={job} 
+										isCurrentTab={false} 
+										showTabInfo={true}
+									/>
+								))}
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* Action Buttons */}
+				<div style={actionButtonsStyle}>
+					{!hasCurrentTabJob && (
+						<>
+							<button onClick={handleGenerateClick} style={primaryButtonStyle}>
+								Generate Speech
+							</button>
+							<button onClick={openOptionsPage} style={secondaryButtonStyle}>
+								Settings
+							</button>
+						</>
+					)}
+					{completedJobs.length > 0 && (
+						<button onClick={handleCleanupJobs} style={cleanupButtonStyle}>
+							Clear Completed ({completedJobs.length})
+						</button>
+					)}
 				</div>
 			</div>
 		</div>
@@ -538,6 +578,165 @@ const stageLabelTextStyle: React.CSSProperties = {
 	fontSize: "11px",
 	color: "#666",
 	fontWeight: "500",
+};
+
+// New job-based styles
+const headerBadgeStyle: React.CSSProperties = {
+	backgroundColor: "#4285f4",
+	color: "white",
+	fontSize: "12px",
+	padding: "2px 8px",
+	borderRadius: "12px",
+	fontWeight: "500",
+};
+
+const currentTabSectionStyle: React.CSSProperties = {
+	marginBottom: "15px",
+};
+
+const sectionTitleStyle: React.CSSProperties = {
+	margin: "0 0 10px 0",
+	fontSize: "14px",
+	fontWeight: "600",
+	color: "#333",
+};
+
+const idleSectionStyle: React.CSSProperties = {
+	textAlign: "center",
+	marginBottom: "15px",
+};
+
+const otherJobsSectionStyle: React.CSSProperties = {
+	marginBottom: "15px",
+};
+
+const collapsibleButtonStyle: React.CSSProperties = {
+	width: "100%",
+	padding: "10px 12px",
+	backgroundColor: "#f8f9fa",
+	border: "1px solid #e0e0e0",
+	borderRadius: "6px",
+	fontSize: "14px",
+	cursor: "pointer",
+	display: "flex",
+	justifyContent: "space-between",
+	alignItems: "center",
+	fontWeight: "500",
+	color: "#333",
+};
+
+const otherJobsListStyle: React.CSSProperties = {
+	marginTop: "10px",
+	display: "flex",
+	flexDirection: "column",
+	gap: "8px",
+};
+
+const actionButtonsStyle: React.CSSProperties = {
+	display: "flex",
+	flexDirection: "column",
+	gap: "10px",
+	marginTop: "15px",
+};
+
+const cleanupButtonStyle: React.CSSProperties = {
+	padding: "8px 12px",
+	backgroundColor: "#f8f9fa",
+	color: "#666",
+	border: "1px solid #e0e0e0",
+	borderRadius: "4px",
+	fontSize: "12px",
+	cursor: "pointer",
+	fontWeight: "400",
+};
+
+// Job Card Styles
+const jobCardStyle: React.CSSProperties = {
+	padding: "12px",
+	border: "1px solid #e0e0e0",
+	borderRadius: "8px",
+	backgroundColor: "#ffffff",
+};
+
+const currentTabJobStyle: React.CSSProperties = {
+	border: "2px solid #4285f4",
+	backgroundColor: "#f8fbff",
+};
+
+const jobHeaderStyle: React.CSSProperties = {
+	display: "flex",
+	justifyContent: "space-between",
+	alignItems: "center",
+	marginBottom: "8px",
+};
+
+const jobStatusStyle: React.CSSProperties = {
+	display: "flex",
+	alignItems: "center",
+	gap: "6px",
+};
+
+const jobTimeStyle: React.CSSProperties = {
+	fontSize: "12px",
+	color: "#666",
+	fontWeight: "400",
+};
+
+const jobTitleStyle: React.CSSProperties = {
+	fontSize: "13px",
+	fontWeight: "500",
+	color: "#333",
+	marginBottom: "6px",
+	lineHeight: "1.3",
+};
+
+const jobMessageStyle: React.CSSProperties = {
+	fontSize: "12px",
+	color: "#666",
+	marginBottom: "8px",
+	fontStyle: "italic",
+};
+
+const jobErrorStyle: React.CSSProperties = {
+	fontSize: "12px",
+	color: "#d93025",
+	marginBottom: "8px",
+	fontWeight: "400",
+};
+
+const jobSuccessStyle: React.CSSProperties = {
+	fontSize: "12px",
+	color: "#137333",
+	marginBottom: "8px",
+	fontWeight: "400",
+};
+
+const jobActionsStyle: React.CSSProperties = {
+	display: "flex",
+	gap: "8px",
+	justifyContent: "flex-end",
+};
+
+const jobActionButtonStyle: React.CSSProperties = {
+	padding: "4px 8px",
+	backgroundColor: "#4285f4",
+	color: "white",
+	border: "none",
+	borderRadius: "4px",
+	fontSize: "12px",
+	cursor: "pointer",
+	fontWeight: "500",
+};
+
+const jobRemoveButtonStyle: React.CSSProperties = {
+	padding: "4px 8px",
+	backgroundColor: "transparent",
+	color: "#666",
+	border: "1px solid #ccc",
+	borderRadius: "4px",
+	fontSize: "12px",
+	cursor: "pointer",
+	fontWeight: "400",
 };
 
 // Add CSS animations

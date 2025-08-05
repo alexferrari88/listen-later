@@ -33,7 +33,7 @@ describe("Readability.js Loading Regression Tests", () => {
 			"utf-8",
 		);
 		contentScriptCode = fs.readFileSync(
-			path.join(extensionPath, "content.js"),
+			path.join(extensionPath, "content-scripts", "content.js"),
 			"utf-8",
 		);
 	});

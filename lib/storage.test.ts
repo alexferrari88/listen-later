@@ -53,16 +53,26 @@ describe("Storage Functions", () => {
 	});
 
 	describe("ExtensionState functions", () => {
-		it("should return default idle state when no state exists", async () => {
+		it("should return default job-based state when no state exists", async () => {
 			const state = await getExtensionState();
-			expect(state).toEqual({ status: "idle" });
+			expect(state).toEqual({ activeJobs: [], maxConcurrentJobs: 3 });
 			expect(mockStorage.get).toHaveBeenCalledWith("extensionState");
 		});
 
 		it("should return stored state when it exists", async () => {
 			const storedState: ExtensionState = {
-				status: "processing",
-				message: "Working...",
+				activeJobs: [
+					{
+						id: "test-job",
+						tabId: 1,
+						tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+						status: "processing",
+						message: "Working...",
+						startTime: Date.now(),
+						text: "test text",
+					},
+				],
+				maxConcurrentJobs: 3,
 			};
 			mockStorageData["extensionState"] = storedState;
 
@@ -71,41 +81,69 @@ describe("Storage Functions", () => {
 		});
 
 		it("should merge partial state updates with existing state", async () => {
-			const initialState: ExtensionState = { status: "idle" };
+			const initialState: ExtensionState = { activeJobs: [], maxConcurrentJobs: 3 };
 			mockStorageData["extensionState"] = initialState;
 
-			await setExtensionState({ status: "processing", message: "Loading..." });
+			const newJob = {
+				id: "test-job",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "processing" as const,
+				message: "Loading...",
+				startTime: Date.now(),
+				text: "test text",
+			};
+			await setExtensionState({ activeJobs: [newJob] });
 
 			expect(mockStorage.set).toHaveBeenCalledWith({
-				extensionState: { status: "processing", message: "Loading..." },
+				extensionState: { activeJobs: [newJob], maxConcurrentJobs: 3 },
 			});
 		});
 
 		it("should preserve existing properties when partially updating state", async () => {
-			const initialState: ExtensionState = {
-				status: "processing",
+			const existingJob = {
+				id: "existing-job",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "processing" as const,
 				message: "Loading...",
+				startTime: Date.now(),
+				text: "test text",
+			};
+			const initialState: ExtensionState = {
+				activeJobs: [existingJob],
+				maxConcurrentJobs: 3,
 			};
 			mockStorageData["extensionState"] = initialState;
 
-			await setExtensionState({ status: "success" });
+			await setExtensionState({ maxConcurrentJobs: 5 });
 
 			expect(mockStorage.set).toHaveBeenCalledWith({
-				extensionState: { status: "success", message: "Loading..." },
+				extensionState: { activeJobs: [existingJob], maxConcurrentJobs: 5 },
 			});
 		});
 
-		it("should reset state to idle with no message", async () => {
+		it("should reset state to default job-based state", async () => {
 			const initialState: ExtensionState = {
-				status: "error",
-				message: "Something went wrong",
+				activeJobs: [
+					{
+						id: "test-job",
+						tabId: 1,
+						tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+						status: "error",
+						message: "Something went wrong",
+						startTime: Date.now(),
+						text: "test text",
+					},
+				],
+				maxConcurrentJobs: 3,
 			};
 			mockStorageData["extensionState"] = initialState;
 
 			await resetExtensionState();
 
 			expect(mockStorage.set).toHaveBeenCalledWith({
-				extensionState: { status: "idle", message: undefined },
+				extensionState: { activeJobs: [], maxConcurrentJobs: 3 },
 			});
 		});
 	});
