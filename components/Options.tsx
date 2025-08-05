@@ -198,9 +198,14 @@ const Options: React.FC = () => {
 	};
 
 	const updatePromptPreview = useCallback((template: string) => {
-		const sampleText = "This is a sample article about technology and innovation.";
-		const preview = substituteSpeechStyleTemplate(template, sampleText);
-		setPromptPreview(preview);
+		try {
+			const sampleText = "This is a sample article about technology and innovation.";
+			const preview = substituteSpeechStyleTemplate(template, sampleText);
+			setPromptPreview(preview);
+		} catch (error) {
+			console.error("Error in updatePromptPreview:", error);
+			setPromptPreview("Error generating preview");
+		}
 	}, []);
 
 	if (isLoading) {
@@ -719,7 +724,7 @@ const PromptModal: React.FC<PromptModalProps> = ({
 							}}
 						/>
 						<small style={{ color: "#666", display: "block", marginTop: "4px" }}>
-							Use ${content} as a placeholder for the article text
+							Use {'${content}'} as a placeholder for the article text
 						</small>
 					</div>
 
