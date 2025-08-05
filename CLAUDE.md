@@ -86,7 +86,7 @@ interface ExtensionOptions {
 
 **⚠️ CRITICAL: Content Script Match Patterns**
 - NEVER use `matches: ['<all_urls>']` in content scripts - this causes mass tab reloads on extension install
-- Use restrictive patterns like `matches: ['http://localhost:3000/*']` for programmatically injected scripts
+- Use restrictive patterns like `matches: ['http://localhost/*']` for programmatically injected scripts
 - Chrome prepares extension context for all matching tabs during installation, causing system freezes
 - Since we use programmatic injection, the match pattern should be minimal and non-disruptive
 
