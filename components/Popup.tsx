@@ -23,6 +23,7 @@ const Popup: React.FC = () => {
 	const [showOtherJobs, setShowOtherJobs] = useState(false);
 	const [isOptionsConfigured, setIsOptionsConfigured] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
+	const [currentTime, setCurrentTime] = useState(Date.now());
 	const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
 	// Load initial state and check if options are configured
@@ -117,6 +118,31 @@ const Popup: React.FC = () => {
 		return () => chrome.storage.onChanged.removeListener(handleStorageChange);
 	}, [currentTabId]);
 
+	// Real-time timer effect for processing jobs
+	useEffect(() => {
+		const hasProcessingJobs = allJobs.some(
+			(job) => job.status === "processing",
+		);
+
+		if (hasProcessingJobs) {
+			// Update current time every second to refresh elapsed time display
+			intervalRef.current = setInterval(() => {
+				setCurrentTime(Date.now());
+			}, 1000);
+		} else if (intervalRef.current) {
+			// Clear interval when no processing jobs
+			clearInterval(intervalRef.current);
+			intervalRef.current = null;
+		}
+
+		return () => {
+			if (intervalRef.current) {
+				clearInterval(intervalRef.current);
+				intervalRef.current = null;
+			}
+		};
+	}, [allJobs]);
+
 	// Cleanup effect
 	useEffect(() => {
 		return () => {
@@ -196,7 +222,7 @@ const Popup: React.FC = () => {
 	};
 
 	const formatElapsedTime = (startTime: number): string => {
-		const elapsed = Math.floor((Date.now() - startTime) / 1000);
+		const elapsed = Math.floor((currentTime - startTime) / 1000);
 		if (elapsed < 60) {
 			return `${elapsed}s`;
 		}
@@ -224,38 +250,53 @@ const Popup: React.FC = () => {
 		}
 	};
 
-	const getProcessingStage = (message?: string): string => {
-		if (!message) return "Processing";
+	const getProcessingStage = (
+		message?: string,
+	): { stage: string; emoji: string; progress: number } => {
+		if (!message) return { stage: "Processing", emoji: "⚙️", progress: 10 };
+
+		const lowerMessage = message.toLowerCase();
+
 		if (
-			message.includes("extraction") ||
-			message.includes("Analyzing") ||
-			message.includes("Loading")
+			lowerMessage.includes("extraction") ||
+			lowerMessage.includes("analyzing") ||
+			lowerMessage.includes("loading") ||
+			lowerMessage.includes("content processing")
 		) {
-			return "Extracting content";
+			return { stage: "Extracting content", emoji: "📄", progress: 20 };
 		} else if (
-			message.includes("Preparing speech") ||
-			message.includes("Starting speech")
+			lowerMessage.includes("preparing speech") ||
+			lowerMessage.includes("starting speech") ||
+			lowerMessage.includes("preparing")
 		) {
-			return "Preparing";
+			return { stage: "Preparing request", emoji: "🔧", progress: 40 };
 		} else if (
-			message.includes("speech") ||
-			message.includes("AI") ||
-			message.includes("generating") ||
-			message.includes("Connecting to Gemini")
+			lowerMessage.includes("connecting to gemini") ||
+			lowerMessage.includes("sending to ai") ||
+			lowerMessage.includes("contacting")
 		) {
-			return "Generating speech";
+			return { stage: "Connecting to AI", emoji: "🔗", progress: 50 };
 		} else if (
-			message.includes("processing audio") ||
-			message.includes("Speech generated successfully")
+			lowerMessage.includes("speech") ||
+			lowerMessage.includes("ai") ||
+			lowerMessage.includes("generating") ||
+			lowerMessage.includes("gemini")
 		) {
-			return "Processing audio";
+			return { stage: "Generating speech", emoji: "🎙️", progress: 70 };
 		} else if (
-			message.includes("download") ||
-			message.includes("Preparing audio")
+			lowerMessage.includes("processing audio") ||
+			lowerMessage.includes("speech generated") ||
+			lowerMessage.includes("converting")
 		) {
-			return "Finalizing";
+			return { stage: "Processing audio", emoji: "🎵", progress: 85 };
+		} else if (
+			lowerMessage.includes("download") ||
+			lowerMessage.includes("preparing audio") ||
+			lowerMessage.includes("finalizing")
+		) {
+			return { stage: "Finalizing", emoji: "📥", progress: 95 };
 		}
-		return "Processing";
+		return { stage: "Processing", emoji: "⚙️", progress: 30 };
 	};
 
 	const openOptionsPage = () => {
@@ -272,18 +313,26 @@ const Popup: React.FC = () => {
 		const status = getJobStatus(job);
 		const displayName = getJobDisplayName(job);
 		const elapsed = formatElapsedTime(job.startTime);
-		const stage = getProcessingStage(job.message);
+		const stageInfo = getProcessingStage(job.message);
 
 		return (
 			<div
 				style={{
 					...jobCardStyle,
 					...(isCurrentTab ? currentTabJobStyle : {}),
+					...(job.status === "processing" ? processingJobCardStyle : {}),
 				}}
 			>
 				<div style={jobHeaderStyle}>
 					<div style={jobStatusStyle}>
-						<span style={{ fontSize: "16px" }}>{status.emoji}</span>
+						<span
+							style={{
+								fontSize: "16px",
+								...(job.status === "processing" ? pulsingEmojiStyle : {}),
+							}}
+						>
+							{status.emoji}
+						</span>
 						<span
 							style={{
 								color: status.color,
@@ -306,8 +355,29 @@ const Popup: React.FC = () => {
 
 				{job.status === "processing" && (
 					<div>
-						<div style={jobMessageStyle}>
-							{stage}: {job.message}
+						<div style={stageIndicatorStyle}>
+							<span style={stageEmojiStyle}>{stageInfo.emoji}</span>
+							<span style={stageTitleStyle}>{stageInfo.stage}</span>
+							<div style={stageProgressBarStyle}>
+								<div
+									style={{
+										...stageProgressFillStyle,
+										width: `${stageInfo.progress}%`,
+									}}
+								/>
+							</div>
+						</div>
+						<div
+							style={{
+								...jobMessageStyle,
+								animation: "breathe 2s infinite ease-in-out",
+							}}
+						>
+							{job.message}
+						</div>
+						<div style={connectionStatusStyle}>
+							<div style={connectionDotStyle}></div>
+							<span>Active connection • {elapsed} elapsed</span>
 						</div>
 						{job.progress !== undefined && (
 							<div style={progressContainerStyle}>
@@ -326,11 +396,28 @@ const Popup: React.FC = () => {
 				)}
 
 				{job.status === "error" && (
-					<div style={jobErrorStyle}>{job.message}</div>
+					<div style={errorContainerStyle}>
+						<div style={errorHeaderStyle}>
+							<span style={errorIconStyle}>⚠️</span>
+							<span style={errorTitleStyle}>Processing Failed</span>
+						</div>
+						<div style={jobErrorStyle}>{job.message}</div>
+						<div style={connectionStatusStyle}>
+							<span>Failed • {elapsed} total</span>
+						</div>
+						<div style={errorHelpStyle}>
+							Try checking your internet connection or API key settings
+						</div>
+					</div>
 				)}
 
 				{job.status === "success" && job.filename && (
-					<div style={jobSuccessStyle}>Downloaded: {job.filename}</div>
+					<div>
+						<div style={jobSuccessStyle}>Downloaded: {job.filename}</div>
+						<div style={connectionStatusStyle}>
+							<span>Completed • {elapsed} total</span>
+						</div>
+					</div>
 				)}
 
 				<div style={jobActionsStyle}>
@@ -345,9 +432,9 @@ const Popup: React.FC = () => {
 					{job.status === "error" && (
 						<button
 							onClick={() => handleRetryJob(job.id)}
-							style={jobActionButtonStyle}
+							style={retryButtonStyle}
 						>
-							Retry
+							🔄 Retry
 						</button>
 					)}
 					{job.status !== "processing" && (
@@ -411,9 +498,21 @@ const Popup: React.FC = () => {
 	return (
 		<div style={containerStyle}>
 			<div style={headerStyle}>
-				<h2 style={titleStyle}>Listen Later</h2>
+				<h2 style={titleStyle}>
+					Listen Later
+					{allJobs.some((job) => job.status === "processing") && (
+						<span style={activityDotStyle}>●</span>
+					)}
+				</h2>
 				{allJobs.length > 0 && (
-					<div style={headerBadgeStyle}>
+					<div
+						style={{
+							...headerBadgeStyle,
+							...(allJobs.some((job) => job.status === "processing")
+								? { animation: "breathe 2s infinite ease-in-out" }
+								: {}),
+						}}
+					>
 						{allJobs.filter((job) => job.status === "processing").length} active
 					</div>
 				)}
@@ -905,6 +1004,118 @@ const jobCancelButtonStyle: React.CSSProperties = {
 	fontWeight: "500",
 };
 
+// Enhanced animation styles for processing jobs
+const pulsingEmojiStyle: React.CSSProperties = {
+	animation: "pulse 2s infinite",
+};
+
+const processingJobCardStyle: React.CSSProperties = {
+	boxShadow: "0 0 0 2px rgba(66, 133, 244, 0.1)",
+	animation: "subtlePulse 3s infinite ease-in-out",
+};
+
+// Stage indicator styles
+const stageEmojiStyle: React.CSSProperties = {
+	fontSize: "14px",
+	marginRight: "6px",
+};
+
+const stageTitleStyle: React.CSSProperties = {
+	fontSize: "13px",
+	fontWeight: "600",
+	color: "#4285f4",
+	marginBottom: "6px",
+};
+
+const stageProgressBarStyle: React.CSSProperties = {
+	width: "100%",
+	height: "4px",
+	backgroundColor: "#e0e0e0",
+	borderRadius: "2px",
+	overflow: "hidden",
+	marginTop: "4px",
+};
+
+const stageProgressFillStyle: React.CSSProperties = {
+	height: "100%",
+	background: "linear-gradient(90deg, #4285f4 25%, #66a3ff 50%, #4285f4 75%)",
+	backgroundSize: "200% 100%",
+	borderRadius: "2px",
+	transition: "width 0.5s ease-out",
+	animation: "shimmer 2s infinite linear",
+};
+
+// Heartbeat and activity indicator styles
+const activityDotStyle: React.CSSProperties = {
+	color: "#4CAF50",
+	fontSize: "12px",
+	marginLeft: "8px",
+	animation: "breathe 1.5s infinite ease-in-out",
+};
+
+const connectionStatusStyle: React.CSSProperties = {
+	fontSize: "10px",
+	color: "#666",
+	marginTop: "2px",
+	display: "flex",
+	alignItems: "center",
+	gap: "4px",
+};
+
+const connectionDotStyle: React.CSSProperties = {
+	width: "6px",
+	height: "6px",
+	borderRadius: "50%",
+	backgroundColor: "#4CAF50",
+	animation: "breathe 2s infinite ease-in-out",
+};
+
+// Enhanced error handling styles
+const errorContainerStyle: React.CSSProperties = {
+	backgroundColor: "#fdf2f2",
+	border: "1px solid #fecaca",
+	borderRadius: "6px",
+	padding: "8px",
+	marginTop: "6px",
+};
+
+const errorHeaderStyle: React.CSSProperties = {
+	display: "flex",
+	alignItems: "center",
+	marginBottom: "4px",
+};
+
+const errorIconStyle: React.CSSProperties = {
+	fontSize: "14px",
+	marginRight: "6px",
+};
+
+const errorTitleStyle: React.CSSProperties = {
+	fontSize: "12px",
+	fontWeight: "600",
+	color: "#dc2626",
+};
+
+const errorHelpStyle: React.CSSProperties = {
+	fontSize: "10px",
+	color: "#7f1d1d",
+	fontStyle: "italic",
+	marginTop: "4px",
+};
+
+const retryButtonStyle: React.CSSProperties = {
+	padding: "6px 12px",
+	backgroundColor: "#f59e0b",
+	color: "white",
+	border: "none",
+	borderRadius: "4px",
+	fontSize: "12px",
+	cursor: "pointer",
+	fontWeight: "600",
+	boxShadow: "0 1px 3px rgba(245, 158, 11, 0.3)",
+	transition: "all 0.2s ease",
+};
+
 // Add CSS animations
 const styleSheet = document.createElement("style");
 styleSheet.textContent = `
@@ -917,6 +1128,32 @@ styleSheet.textContent = `
 		0% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.7); }
 		70% { box-shadow: 0 0 0 10px rgba(66, 133, 244, 0); }
 		100% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0); }
+	}
+	
+	@keyframes subtlePulse {
+		0% { 
+			box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+			transform: scale(1);
+		}
+		50% { 
+			box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.2);
+			transform: scale(1.005);
+		}
+		100% { 
+			box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+			transform: scale(1);
+		}
+	}
+	
+	@keyframes breathe {
+		0% { opacity: 1; }
+		50% { opacity: 0.7; }
+		100% { opacity: 1; }
+	}
+	
+	@keyframes shimmer {
+		0% { background-position: -200% 0; }
+		100% { background-position: 200% 0; }
 	}
 `;
 if (!document.head.querySelector('style[data-listen-later="animations"]')) {
