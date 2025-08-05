@@ -27,9 +27,11 @@ import {
 	getExtensionOptions,
 	getExtensionState,
 	getJob,
+	getSpeechStylePromptById,
 	type ProcessingJob,
 	removeJob,
 	sanitizeErrorMessage,
+	substituteSpeechStyleTemplate,
 	updateJob,
 } from "../lib/storage";
 
@@ -115,8 +117,9 @@ const handleMessage = withAsyncLogging(
 					logger.debug("Handling MODAL_CONFIRMED message", {
 						jobId: message.jobId,
 						textLength: message.text?.length,
+						selectedPromptId: message.selectedPromptId,
 					});
-					await handleModalConfirmed(message.jobId, message.text, sendResponse);
+					await handleModalConfirmed(message.jobId, message.text, message.selectedPromptId, sendResponse);
 					break;
 				case "MODAL_CANCELLED":
 					logger.debug("Handling MODAL_CANCELLED message", {
@@ -388,11 +391,13 @@ const handleModalConfirmed = withAsyncLogging(
 	async (
 		jobId: string,
 		userText: string,
+		selectedPromptId: string | undefined,
 		sendResponse: (response?: any) => void,
 	) => {
 		logger.debug("User confirmed text for TTS from modal", {
 			jobId,
 			textLength: userText.length,
+			selectedPromptId,
 			preview: userText.substring(0, 100) + "...",
 		});
 
@@ -402,12 +407,17 @@ const handleModalConfirmed = withAsyncLogging(
 			throw new Error(`Job ${jobId} not found`);
 		}
 
-		// Update job with user-confirmed text and set status back to processing
+		// Update job with user-confirmed text and selected prompt ID, and set status back to processing
 		await updateJob(jobId, {
 			text: userText,
 			status: "processing",
 			message: "Starting speech generation...",
 			progress: 5,
+			// Store selected prompt ID in tabInfo for later use
+			tabInfo: {
+				...job.tabInfo,
+				selectedPromptId,
+			},
 		});
 
 		// Update badge to reflect new processing job
@@ -566,6 +576,23 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 		progress: 8,
 	});
 
+	// Get the speech style prompt to use
+	const selectedPromptId = job.tabInfo.selectedPromptId || options.defaultPromptId || "documentary";
+	const selectedPrompt = await getSpeechStylePromptById(selectedPromptId);
+	
+	// Fallback to documentary style if prompt not found
+	const promptTemplate = selectedPrompt?.template || 
+		"Narrate the following text in a professional, authoritative, and well-paced documentary style: ${content}";
+	
+	const finalText = substituteSpeechStyleTemplate(promptTemplate, job.text);
+	
+	logger.debug("Using speech style prompt", {
+		jobId,
+		selectedPromptId,
+		promptName: selectedPrompt?.name || "Default Documentary",
+		finalTextLength: finalText.length,
+	});
+
 	// Make API call to Gemini
 	const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${options.modelName}:generateContent`;
 	logger.background.api(endpoint, undefined, {
@@ -573,6 +600,8 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 		modelName: options.modelName,
 		voice: options.voice,
 		textLength: job.text.length,
+		selectedPromptId,
+		promptName: selectedPrompt?.name,
 	});
 
 	const requestBody = {
@@ -580,7 +609,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 			{
 				parts: [
 					{
-						text: `Narrate the following text in a professional, authoritative, and well-paced documentary style: ${job.text}`,
+						text: finalText,
 					},
 				],
 			},

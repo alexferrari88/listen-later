@@ -2,7 +2,8 @@
 // This content script is injected programmatically by the background script when needed
 
 import { logger } from "../lib/logger";
-import type { ProcessingJob } from "../lib/storage";
+import type { ProcessingJob, SpeechStylePrompt } from "../lib/storage";
+import { getExtensionOptions, substituteSpeechStyleTemplate } from "../lib/storage";
 
 // Extend window object to include modal data
 declare global {
@@ -35,7 +36,7 @@ export default defineContentScript({
 	},
 });
 
-function showTextPreviewModal(job: ProcessingJob) {
+async function showTextPreviewModal(job: ProcessingJob) {
 	// Remove existing modal if any
 	hideTextPreviewModal();
 
@@ -43,6 +44,16 @@ function showTextPreviewModal(job: ProcessingJob) {
 		jobId: job.id,
 		textLength: job.text?.length || 0,
 	});
+
+	// Load extension options to get available prompts
+	const options = await getExtensionOptions();
+	if (!options) {
+		logger.error("Failed to load extension options for modal");
+		return;
+	}
+
+	const availablePrompts = options.speechStylePrompts || [];
+	let selectedPromptId = options.defaultPromptId || "documentary";
 
 	// Create modal overlay
 	const overlay = document.createElement("div");
@@ -117,13 +128,99 @@ function showTextPreviewModal(job: ProcessingJob) {
 
 	const instructions = document.createElement("div");
 	instructions.textContent =
-		"Review and edit the extracted text below. Make any necessary corrections before generating speech.";
+		"Review and edit the extracted text below. Select a speech style and make any necessary corrections before generating speech.";
 	instructions.style.cssText = `
 		font-size: 14px;
 		color: #666;
 		margin-bottom: 15px;
 		line-height: 1.4;
 	`;
+
+	// Speech Style Prompt Selector
+	const promptSection = document.createElement("div");
+	promptSection.style.cssText = `
+		margin-bottom: 15px;
+		padding: 12px;
+		background-color: #f8f9fa;
+		border: 1px solid #e0e0e0;
+		border-radius: 6px;
+	`;
+
+	const promptLabel = document.createElement("label");
+	promptLabel.textContent = "Speech Style:";
+	promptLabel.style.cssText = `
+		display: block;
+		font-weight: 500;
+		font-size: 13px;
+		color: #333;
+		margin-bottom: 6px;
+	`;
+
+	const promptSelect = document.createElement("select");
+	promptSelect.style.cssText = `
+		width: 100%;
+		padding: 6px 8px;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		font-size: 13px;
+		background-color: white;
+	`;
+
+	// Add prompt options
+	availablePrompts.forEach(prompt => {
+		const option = document.createElement("option");
+		option.value = prompt.id;
+		option.textContent = `${prompt.name} - ${prompt.description}`;
+		if (prompt.id === selectedPromptId) {
+			option.selected = true;
+		}
+		promptSelect.appendChild(option);
+	});
+
+	// Final text preview section
+	const previewSection = document.createElement("div");
+	previewSection.style.cssText = `
+		margin-top: 8px;
+	`;
+
+	const previewLabel = document.createElement("div");
+	previewLabel.textContent = "Final text that will be sent for speech generation:";
+	previewLabel.style.cssText = `
+		font-size: 11px;
+		color: #666;
+		margin-bottom: 4px;
+		font-weight: 500;
+	`;
+
+	const previewText = document.createElement("div");
+	previewText.style.cssText = `
+		max-height: 60px;
+		overflow-y: auto;
+		padding: 6px 8px;
+		background-color: #f5f5f5;
+		border: 1px solid #e0e0e0;
+		border-radius: 3px;
+		font-size: 11px;
+		color: #555;
+		line-height: 1.3;
+	`;
+
+	// Function to update preview text
+	const updatePreview = () => {
+		const currentPrompt = availablePrompts.find(p => p.id === selectedPromptId);
+		if (currentPrompt && textarea.value) {
+			const finalText = substituteSpeechStyleTemplate(currentPrompt.template, textarea.value);
+			previewText.textContent = finalText;
+		} else {
+			previewText.textContent = textarea.value || "";
+		}
+	};
+
+	promptSection.appendChild(promptLabel);
+	promptSection.appendChild(promptSelect);
+	previewSection.appendChild(previewLabel);
+	previewSection.appendChild(previewText);
+	promptSection.appendChild(previewSection);
 
 	const textarea = document.createElement("textarea");
 	textarea.value = job.text || "";
@@ -169,10 +266,20 @@ function showTextPreviewModal(job: ProcessingJob) {
 		`;
 	};
 
+	// Add event listeners
 	textarea.addEventListener("input", updateStats);
+	textarea.addEventListener("input", updatePreview);
+	
+	promptSelect.addEventListener("change", (e) => {
+		selectedPromptId = (e.target as HTMLSelectElement).value;
+		updatePreview();
+	});
+
 	updateStats(); // Initial stats
+	updatePreview(); // Initial preview
 
 	content.appendChild(instructions);
+	content.appendChild(promptSection);
 	content.appendChild(textarea);
 	content.appendChild(stats);
 
@@ -239,6 +346,7 @@ function showTextPreviewModal(job: ProcessingJob) {
 			logger.debug("User confirmed text for TTS", {
 				jobId: job.id,
 				textLength: textarea.value.length,
+				selectedPromptId,
 			});
 
 			// Send confirmation message to background script
@@ -246,6 +354,7 @@ function showTextPreviewModal(job: ProcessingJob) {
 				type: "MODAL_CONFIRMED",
 				jobId: job.id,
 				text: textarea.value,
+				selectedPromptId,
 			});
 
 			// Brief delay to show feedback, then close modal immediately

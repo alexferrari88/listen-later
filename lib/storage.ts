@@ -7,6 +7,7 @@ export interface TabInfo {
 	title: string;
 	domain: string;
 	articleTitle?: string;
+	selectedPromptId?: string;
 }
 
 // Individual processing job
@@ -28,11 +29,22 @@ export interface ExtensionState {
 	maxConcurrentJobs: number;
 }
 
+// Speech style prompt configuration
+export interface SpeechStylePrompt {
+	id: string;
+	name: string;
+	description: string;
+	template: string; // Template with ${content} placeholder
+	isDefault?: boolean;
+}
+
 // For user-configured settings
 export interface ExtensionOptions {
 	apiKey: string;
 	modelName: string;
 	voice: string;
+	speechStylePrompts: SpeechStylePrompt[];
+	defaultPromptId: string;
 }
 
 // Storage keys
@@ -84,28 +96,38 @@ export async function getExtensionOptions(): Promise<ExtensionOptions | null> {
 
 	if (!stored) return null;
 
+	// Ensure backward compatibility by adding default prompts if missing
+	let options = stored;
+	if (!options.speechStylePrompts || options.speechStylePrompts.length === 0) {
+		options = {
+			...options,
+			speechStylePrompts: [...DEFAULT_SPEECH_STYLE_PROMPTS],
+			defaultPromptId: options.defaultPromptId || "documentary",
+		};
+	}
+
 	// If apiKey looks encrypted (base64 without periods/slashes, different pattern than typical API keys), decrypt it
 	if (
-		stored.apiKey &&
-		stored.apiKey.length > 10 &&
-		/^[A-Za-z0-9+/]+=*$/.test(stored.apiKey) &&
-		!stored.apiKey.startsWith("AI")
+		options.apiKey &&
+		options.apiKey.length > 10 &&
+		/^[A-Za-z0-9+/]+=*$/.test(options.apiKey) &&
+		!options.apiKey.startsWith("AI")
 	) {
 		try {
 			const deviceKey = await getDeviceKey();
-			const decrypted = simpleDecrypt(stored.apiKey, deviceKey);
+			const decrypted = simpleDecrypt(options.apiKey, deviceKey);
 			return {
-				...stored,
+				...options,
 				apiKey: decrypted,
 			};
 		} catch (error) {
 			console.error("Failed to decrypt API key:", error);
 			// Return as-is if decryption fails (backward compatibility)
-			return stored;
+			return options;
 		}
 	}
 
-	return stored;
+	return options;
 }
 
 export async function setExtensionOptions(
@@ -132,11 +154,53 @@ export async function setExtensionOptions(
 	}
 }
 
-export async function getDefaultExtensionOptions(): ExtensionOptions {
+// Default speech style prompts
+export const DEFAULT_SPEECH_STYLE_PROMPTS: SpeechStylePrompt[] = [
+	{
+		id: "documentary",
+		name: "Documentary Style",
+		description: "Professional, authoritative, and well-paced narration",
+		template:
+			"Narrate the following text in a professional, authoritative, and well-paced documentary style: ${content}",
+		isDefault: true,
+	},
+	{
+		id: "conversational",
+		name: "Conversational",
+		description: "Friendly, casual tone as if explaining to a friend",
+		template:
+			"Read this text in a friendly, conversational tone as if explaining to a friend: ${content}",
+	},
+	{
+		id: "news",
+		name: "News Report",
+		description: "Clear, professional news reporting style",
+		template:
+			"Present this information as a clear, professional news report: ${content}",
+	},
+	{
+		id: "audiobook",
+		name: "Audiobook",
+		description: "Engaging audiobook narration with appropriate pacing",
+		template:
+			"Narrate this text in an engaging audiobook style with appropriate pacing: ${content}",
+	},
+	{
+		id: "podcast",
+		name: "Podcast Style",
+		description: "Casual, engaging podcast presentation",
+		template:
+			"Read the following in an engaging, conversational, and friendly tone, as if you were hosting a podcast: ${content}",
+	},
+];
+
+export async function getDefaultExtensionOptions(): Promise<ExtensionOptions> {
 	return {
 		apiKey: "",
 		modelName: "gemini-2.5-flash-preview-tts",
 		voice: "Aoede",
+		speechStylePrompts: [...DEFAULT_SPEECH_STYLE_PROMPTS],
+		defaultPromptId: "documentary",
 	};
 }
 
@@ -382,6 +446,100 @@ export function sanitizeErrorMessage(error: unknown): string {
 		return "An error occurred. Please try again";
 	}
 	return "An unexpected error occurred";
+}
+
+// Speech Style Prompt Management Functions
+
+export async function getSpeechStylePromptById(promptId: string): Promise<SpeechStylePrompt | null> {
+	const options = await getExtensionOptions();
+	if (!options || !options.speechStylePrompts) return null;
+	
+	return options.speechStylePrompts.find(prompt => prompt.id === promptId) || null;
+}
+
+export async function addSpeechStylePrompt(prompt: Omit<SpeechStylePrompt, 'id'>): Promise<string> {
+	const options = await getExtensionOptions();
+	if (!options) throw new Error("Options not initialized");
+	
+	// Generate unique ID
+	const id = `custom_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+	const newPrompt: SpeechStylePrompt = { ...prompt, id };
+	
+	const updatedOptions = {
+		...options,
+		speechStylePrompts: [...options.speechStylePrompts, newPrompt],
+	};
+	
+	await setExtensionOptions(updatedOptions);
+	return id;
+}
+
+export async function updateSpeechStylePrompt(promptId: string, updates: Partial<Omit<SpeechStylePrompt, 'id'>>): Promise<void> {
+	const options = await getExtensionOptions();
+	if (!options) throw new Error("Options not initialized");
+	
+	const promptIndex = options.speechStylePrompts.findIndex(p => p.id === promptId);
+	if (promptIndex === -1) throw new Error(`Prompt with ID ${promptId} not found`);
+	
+	const updatedPrompts = options.speechStylePrompts.map(prompt => 
+		prompt.id === promptId ? { ...prompt, ...updates } : prompt
+	);
+	
+	const updatedOptions = {
+		...options,
+		speechStylePrompts: updatedPrompts,
+	};
+	
+	await setExtensionOptions(updatedOptions);
+}
+
+export async function deleteSpeechStylePrompt(promptId: string): Promise<void> {
+	const options = await getExtensionOptions();
+	if (!options) throw new Error("Options not initialized");
+	
+	// Don't allow deleting default prompts
+	const prompt = options.speechStylePrompts.find(p => p.id === promptId);
+	if (prompt?.isDefault) {
+		throw new Error("Cannot delete default prompts");
+	}
+	
+	const updatedPrompts = options.speechStylePrompts.filter(p => p.id !== promptId);
+	
+	// If we're deleting the current default prompt, reset to documentary
+	let updatedDefaultPromptId = options.defaultPromptId;
+	if (options.defaultPromptId === promptId) {
+		updatedDefaultPromptId = "documentary";
+	}
+	
+	const updatedOptions = {
+		...options,
+		speechStylePrompts: updatedPrompts,
+		defaultPromptId: updatedDefaultPromptId,
+	};
+	
+	await setExtensionOptions(updatedOptions);
+}
+
+export async function setDefaultSpeechStylePrompt(promptId: string): Promise<void> {
+	const options = await getExtensionOptions();
+	if (!options) throw new Error("Options not initialized");
+	
+	// Verify the prompt exists
+	const promptExists = options.speechStylePrompts.some(p => p.id === promptId);
+	if (!promptExists) {
+		throw new Error(`Prompt with ID ${promptId} not found`);
+	}
+	
+	const updatedOptions = {
+		...options,
+		defaultPromptId: promptId,
+	};
+	
+	await setExtensionOptions(updatedOptions);
+}
+
+export function substituteSpeechStyleTemplate(template: string, content: string): string {
+	return template.replace(/\$\{content\}/g, content);
 }
 
 // Basic encryption utilities for API key storage
