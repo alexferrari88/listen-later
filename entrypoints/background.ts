@@ -1,5 +1,24 @@
 // Remove wav library import (not browser compatible)
 import { logger, withAsyncLogging } from "../lib/logger";
+
+// Browser-compatible base64 conversion helpers
+const base64ToUint8Array = (base64: string): Uint8Array => {
+	const binaryString = atob(base64);
+	const bytes = new Uint8Array(binaryString.length);
+	for (let i = 0; i < binaryString.length; i++) {
+		bytes[i] = binaryString.charCodeAt(i);
+	}
+	return bytes;
+};
+
+const uint8ArrayToBase64 = (uint8Array: Uint8Array): string => {
+	let binaryString = '';
+	for (let i = 0; i < uint8Array.length; i++) {
+		binaryString += String.fromCharCode(uint8Array[i]);
+	}
+	return btoa(binaryString);
+};
+
 import {
 	canStartNewJob,
 	cleanupOldJobs,
@@ -709,11 +728,11 @@ const downloadAudio = withAsyncLogging(
 			filename: job.filename,
 		});
 
-		// Convert base64 to Buffer (raw PCM audio data from Gemini)
-		const pcmBuffer = Buffer.from(base64Data, "base64");
+		// Convert base64 to Uint8Array (raw PCM audio data from Gemini)
+		const pcmBuffer = base64ToUint8Array(base64Data);
 		logger.debug("PCM buffer created", { pcmBufferLength: pcmBuffer.length });
 
-		// Create proper WAV file using the wav library with Gemini's audio parameters
+		// Create proper WAV file using browser-compatible WAV generation
 		const wavBuffer = await createWavFile(pcmBuffer, {
 			channels: 1, // Mono audio
 			sampleRate: 24000, // 24kHz sample rate (Gemini's output)
@@ -721,7 +740,7 @@ const downloadAudio = withAsyncLogging(
 		});
 
 		// Convert WAV buffer to data URL
-		const dataUrl = `data:audio/wav;base64,${wavBuffer.toString("base64")}`;
+		const dataUrl = `data:audio/wav;base64,${uint8ArrayToBase64(wavBuffer)}`;
 		logger.debug("Proper WAV file created", {
 			wavBufferLength: wavBuffer.length,
 		});
@@ -744,9 +763,9 @@ const downloadAudio = withAsyncLogging(
 
 // Browser-compatible helper function to create proper WAV file from PCM data
 const createWavFile = (
-	pcmData: Buffer,
+	pcmData: Uint8Array,
 	options: { channels: number; sampleRate: number; bitDepth: number },
-): Promise<Buffer> => {
+): Promise<Uint8Array> => {
 	return new Promise((resolve) => {
 		const { channels, sampleRate, bitDepth } = options;
 		const bytesPerSample = bitDepth / 8;
@@ -755,31 +774,44 @@ const createWavFile = (
 		const dataSize = pcmData.length;
 		const fileSize = 36 + dataSize;
 
-		// Create WAV header buffer (44 bytes)
-		const header = Buffer.alloc(44);
+		// Create WAV header (44 bytes)
+		const header = new ArrayBuffer(44);
+		const view = new DataView(header);
 		let offset = 0;
 
 		// RIFF header
-		header.write("RIFF", offset); offset += 4;
-		header.writeUInt32LE(fileSize, offset); offset += 4;
-		header.write("WAVE", offset); offset += 4;
+		const riffBytes = new TextEncoder().encode("RIFF");
+		for (let i = 0; i < 4; i++) view.setUint8(offset + i, riffBytes[i]);
+		offset += 4;
+		view.setUint32(offset, fileSize, true); offset += 4; // Little endian
+		const waveBytes = new TextEncoder().encode("WAVE");
+		for (let i = 0; i < 4; i++) view.setUint8(offset + i, waveBytes[i]);
+		offset += 4;
 
 		// fmt chunk
-		header.write("fmt ", offset); offset += 4;
-		header.writeUInt32LE(16, offset); offset += 4; // Subchunk1Size
-		header.writeUInt16LE(1, offset); offset += 2; // AudioFormat (PCM)
-		header.writeUInt16LE(channels, offset); offset += 2; // NumChannels
-		header.writeUInt32LE(sampleRate, offset); offset += 4; // SampleRate
-		header.writeUInt32LE(byteRate, offset); offset += 4; // ByteRate
-		header.writeUInt16LE(blockAlign, offset); offset += 2; // BlockAlign
-		header.writeUInt16LE(bitDepth, offset); offset += 2; // BitsPerSample
+		const fmtBytes = new TextEncoder().encode("fmt ");
+		for (let i = 0; i < 4; i++) view.setUint8(offset + i, fmtBytes[i]);
+		offset += 4;
+		view.setUint32(offset, 16, true); offset += 4; // Subchunk1Size (little endian)
+		view.setUint16(offset, 1, true); offset += 2; // AudioFormat (PCM, little endian)
+		view.setUint16(offset, channels, true); offset += 2; // NumChannels (little endian)
+		view.setUint32(offset, sampleRate, true); offset += 4; // SampleRate (little endian)
+		view.setUint32(offset, byteRate, true); offset += 4; // ByteRate (little endian)
+		view.setUint16(offset, blockAlign, true); offset += 2; // BlockAlign (little endian)
+		view.setUint16(offset, bitDepth, true); offset += 2; // BitsPerSample (little endian)
 
 		// data chunk
-		header.write("data", offset); offset += 4;
-		header.writeUInt32LE(dataSize, offset); offset += 4;
+		const dataBytes = new TextEncoder().encode("data");
+		for (let i = 0; i < 4; i++) view.setUint8(offset + i, dataBytes[i]);
+		offset += 4;
+		view.setUint32(offset, dataSize, true); offset += 4; // Little endian
 
 		// Concatenate header with PCM data
-		const wavBuffer = Buffer.concat([header, pcmData]);
+		const headerArray = new Uint8Array(header);
+		const wavBuffer = new Uint8Array(headerArray.length + pcmData.length);
+		wavBuffer.set(headerArray, 0);
+		wavBuffer.set(pcmData, headerArray.length);
+		
 		resolve(wavBuffer);
 	});
 };
