@@ -80,22 +80,53 @@ function extractContent() {
 				const elements = tempDiv.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6');
 				
 				elements.forEach(element => {
-					const text = element.textContent?.trim();
-					if (text && text.length > 20) { // Only process substantial content
+					const originalText = element.textContent?.trim();
+					if (originalText && originalText.length > 20) { // Only process substantial content
 						// Skip if we've already seen this exact text (avoids nested duplicates)
-						if (!seenTexts.has(text)) {
+						if (!seenTexts.has(originalText)) {
+							let finalText = originalText;
+							
+							// For list items, check if they're in an ordered list and add numbering
+							if (element.tagName.toLowerCase() === 'li') {
+								const parentOl = element.closest('ol');
+								if (parentOl) {
+									// Get the starting number (default is 1)
+									const startNumber = parseInt(parentOl.getAttribute('start') || '1', 10);
+									
+									// Find the position of this li within its parent ol
+									const siblingLis = Array.from(parentOl.children).filter(child => 
+										child.tagName.toLowerCase() === 'li'
+									);
+									const position = siblingLis.indexOf(element);
+									
+									if (position !== -1) {
+										const listNumber = startNumber + position;
+										finalText = `${listNumber}. ${originalText}`;
+										logger.debug(`Added numbering to list item: ${listNumber}. ${originalText.substring(0, 50)}...`);
+									}
+								}
+							}
+							
 							// Check if this element contains other paragraph-level elements
 							const hasNestedContent = element.querySelector('p, li, h1, h2, h3, h4, h5, h6') !== null;
 							
 							// If it has nested content, prefer the parent (li over nested p)
 							// If no nested content, include it
 							if (!hasNestedContent || element.tagName.toLowerCase() === 'li') {
-								paragraphs.push(text);
-								seenTexts.add(text);
-								logger.debug(`Added ${element.tagName}: ${text.substring(0, 50)}...`);
+								paragraphs.push(finalText);
+								// Store both original and final text to prevent future duplicates
+								seenTexts.add(originalText);
+								if (finalText !== originalText) {
+									seenTexts.add(finalText);
+								}
+								logger.debug(`Added ${element.tagName}: ${finalText.substring(0, 50)}...`);
 							} else {
-								logger.debug(`Skipped nested ${element.tagName}: ${text.substring(0, 50)}...`);
+								// Still mark as seen to prevent duplicates, even if we don't include it
+								seenTexts.add(originalText);
+								logger.debug(`Skipped nested ${element.tagName}: ${originalText.substring(0, 50)}...`);
 							}
+						} else {
+							logger.debug(`Skipped duplicate content: ${originalText.substring(0, 50)}...`);
 						}
 					}
 				});
