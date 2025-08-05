@@ -63,11 +63,41 @@ function extractContent() {
 			length: article?.textContent?.length || 0
 		});
 
-		if (article && article.textContent) {
+		if (article && (article.textContent || article.content)) {
+			// Extract text while preserving paragraph structure
+			let extractedText = article.textContent || "";
+			
+			if (article.content) {
+				logger.debug("Extracting structured content to preserve paragraphs");
+				
+				// Create a temporary div to parse the extracted HTML content
+				const tempDiv = document.createElement('div');
+				tempDiv.innerHTML = article.content;
+				
+				// Extract text from paragraph-level elements
+				const paragraphs: string[] = [];
+				const elements = tempDiv.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6');
+				
+				elements.forEach(element => {
+					const text = element.textContent?.trim();
+					if (text && text.length > 0) {
+						paragraphs.push(text);
+					}
+				});
+				
+				// Join paragraphs with double newlines to preserve structure
+				if (paragraphs.length > 0) {
+					extractedText = paragraphs.join('\n\n');
+					logger.debug("Structured extraction complete", {
+						paragraphCount: paragraphs.length,
+						totalLength: extractedText.length
+					});
+				}
+			}
 			logger.debug("Processing extracted content - removing UI elements");
 			
 			// Clean up UI elements while preserving text structure for TTS
-			const cleanText = article.textContent
+			const cleanText = extractedText
 				// Remove URLs and email addresses
 				.replace(/https?:\/\/[^\s]+/g, "")
 				.replace(/[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}/g, "")
@@ -96,7 +126,7 @@ function extractContent() {
 				.substring(0, 100000); // Limit to ~100k characters
 
 			logger.debug("UI cleanup complete, text structure preserved", {
-				originalLength: article.textContent.length,
+				originalLength: extractedText.length,
 				cleanedLength: cleanText.length,
 				preview: cleanText.substring(0, 100) + '...'
 			});
