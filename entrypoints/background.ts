@@ -186,14 +186,26 @@ const handleStartTTS = withAsyncLogging(async (tab: chrome.tabs.Tab | undefined,
 		sendResponse({ success: true, jobId: job.id });
 	} catch (error) {
 		logger.background.injection("Injection failed", error);
-		// Update job status to error
+		
+		// Provide more specific error messages based on error type
+		let errorMessage = "Failed to inject content analysis scripts";
+		if (error instanceof Error) {
+			if (error.message.includes("Cannot access")) {
+				errorMessage = "Cannot access this page. Try a different page or check if it's a restricted site.";
+			} else if (error.message.includes("tab")) {
+				errorMessage = "Tab was closed or is no longer available. Please try again.";
+			} else if (error.message.includes("frame")) {
+				errorMessage = "Cannot inject script into this page frame. Try refreshing the page.";
+			}
+		}
+		
+		// Update job status to error with specific message
 		await updateJob(job.id, {
 			status: "error",
-			message: "Failed to inject content analysis scripts",
+			message: errorMessage,
 		});
-		throw new Error(
-			`Failed to inject content script: ${error instanceof Error ? error.message : "Unknown error"}`,
-		);
+		
+		throw new Error(errorMessage);
 	}
 }, 'handleStartTTS');
 
@@ -227,7 +239,7 @@ const handleContentExtracted = withAsyncLogging(async (
 	});
 
 	try {
-		await generateSpeech(jobId);
+		await generateSpeechWithTimeout(jobId);
 		sendResponse({ success: true });
 	} catch (error) {
 		throw error;
@@ -292,7 +304,7 @@ const handleConfirmTextForTTS = withAsyncLogging(async (
 	});
 
 	try {
-		await generateSpeech(jobId);
+		await generateSpeechWithTimeout(jobId);
 		sendResponse({ success: true });
 	} catch (error) {
 		throw error;
@@ -316,6 +328,27 @@ const handleContentError = withAsyncLogging(async (
 	
 	sendResponse({ success: false, error: sanitizedMessage });
 }, 'handleContentError');
+
+const generateSpeechWithTimeout = withAsyncLogging(async (jobId: string) => {
+	const TIMEOUT_MS = 45 * 60 * 1000; // 45 minutes
+	
+	const timeoutPromise = new Promise<never>((_, reject) => {
+		setTimeout(() => {
+			reject(new Error(`Speech generation timed out after 45 minutes. This may happen with very long articles. You can try again or break the content into smaller parts.`));
+		}, TIMEOUT_MS);
+	});
+	
+	try {
+		await Promise.race([generateSpeech(jobId), timeoutPromise]);
+	} catch (error) {
+		// Update job status on timeout or other errors
+		await updateJob(jobId, {
+			status: "error",
+			message: error instanceof Error ? error.message : "Speech generation failed",
+		});
+		throw error;
+	}
+}, 'generateSpeechWithTimeout');
 
 const generateSpeech = withAsyncLogging(async (jobId: string) => {
 	// Get the job data
@@ -387,31 +420,67 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 		message: "AI is generating speech - this may take 30-60 seconds...",
 	});
 	
-	const response = await fetch(endpoint, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			"x-goog-api-key": options.apiKey,
-		},
-		body: JSON.stringify(requestBody),
-	});
+	let response: Response;
+	try {
+		response = await fetch(endpoint, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"x-goog-api-key": options.apiKey,
+			},
+			body: JSON.stringify(requestBody),
+		});
+	} catch (error) {
+		logger.error("Network error during API call", { jobId, error });
+		throw new Error(
+			"Network error occurred. Please check your internet connection and try again."
+		);
+	}
 
 	logger.background.api(endpoint, response.status);
 	
 	if (!response.ok) {
-		const errorData = await response.json().catch(() => ({}));
+		let errorData: any = {};
+		try {
+			errorData = await response.json();
+		} catch {
+			// Response body is not JSON, ignore
+		}
+		
 		logger.error("API request failed", {
 			jobId,
 			status: response.status,
 			statusText: response.statusText,
 			errorData
 		});
-		throw new Error(
-			`API error: ${response.status} ${response.statusText}. ${errorData.error?.message || ""}`,
-		);
+		
+		// Provide more specific error messages based on status code
+		let errorMessage = `API error: ${response.status} ${response.statusText}`;
+		if (response.status === 401) {
+			errorMessage = "API key is invalid or expired. Please check your API key in settings.";
+		} else if (response.status === 403) {
+			errorMessage = "API access forbidden. Please verify your API key permissions.";
+		} else if (response.status === 429) {
+			errorMessage = "API rate limit exceeded. Please wait a few minutes and try again.";
+		} else if (response.status === 400) {
+			errorMessage = "Invalid request sent to API. The content might be too long or contain unsupported characters.";
+		} else if (response.status >= 500) {
+			errorMessage = "Gemini API is currently experiencing issues. Please try again later.";
+		} else if (errorData.error?.message) {
+			errorMessage = `API error: ${errorData.error.message}`;
+		}
+		
+		throw new Error(errorMessage);
 	}
 
-	const data = await response.json();
+	let data: any;
+	try {
+		data = await response.json();
+	} catch (error) {
+		logger.error("Failed to parse API response JSON", { jobId, error });
+		throw new Error("Received invalid response from Gemini API. Please try again.");
+	}
+	
 	logger.debug("API response received", {
 		jobId,
 		hasCandidates: !!data.candidates,

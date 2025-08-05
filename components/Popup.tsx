@@ -10,6 +10,7 @@ import {
 	getJobsForTab,
 	type ProcessingJob,
 	removeJob,
+	resetExtensionState,
 	retryJob,
 	updateJob,
 } from "../lib/storage";
@@ -221,6 +222,29 @@ const Popup: React.FC = () => {
 		}
 	};
 
+	const handleCancelJob = async (jobId: string) => {
+		try {
+			logger.popup.action("Cancel job button clicked", { jobId });
+			await updateJob(jobId, {
+				status: "error",
+				message: "Cancelled by user",
+			});
+			logger.debug("Job cancelled successfully", { jobId });
+		} catch (error) {
+			logger.error("Failed to cancel job:", error);
+		}
+	};
+
+	const handleClearAllJobs = async () => {
+		try {
+			logger.popup.action("Clear all jobs button clicked");
+			await resetExtensionState();
+			logger.debug("All jobs cleared successfully");
+		} catch (error) {
+			logger.error("Failed to clear all jobs:", error);
+		}
+	};
+
 	const formatElapsedTime = (startTime: number): string => {
 		const elapsed = Math.floor((Date.now() - startTime) / 1000);
 		if (elapsed < 60) {
@@ -331,6 +355,14 @@ const Popup: React.FC = () => {
 				)}
 
 				<div style={jobActionsStyle}>
+					{job.status === "processing" && (
+						<button
+							onClick={() => handleCancelJob(job.id)}
+							style={jobCancelButtonStyle}
+						>
+							Cancel
+						</button>
+					)}
 					{job.status === "error" && (
 						<button
 							onClick={() => handleRetryJob(job.id)}
@@ -467,6 +499,11 @@ const Popup: React.FC = () => {
 					{!hasCurrentTabJob && (
 						<button onClick={openOptionsPage} style={secondaryButtonStyle}>
 							Settings
+						</button>
+					)}
+					{allJobs.length > 0 && (
+						<button onClick={handleClearAllJobs} style={clearAllButtonStyle}>
+							Clear All Jobs ({allJobs.length})
 						</button>
 					)}
 					{completedJobs.length > 0 && (
@@ -747,6 +784,17 @@ const cleanupButtonStyle: React.CSSProperties = {
 	fontWeight: "400",
 };
 
+const clearAllButtonStyle: React.CSSProperties = {
+	padding: "8px 12px",
+	backgroundColor: "#d93025",
+	color: "white",
+	border: "none",
+	borderRadius: "4px",
+	fontSize: "12px",
+	cursor: "pointer",
+	fontWeight: "500",
+};
+
 // Job Card Styles
 const jobCardStyle: React.CSSProperties = {
 	padding: "12px",
@@ -834,6 +882,17 @@ const jobRemoveButtonStyle: React.CSSProperties = {
 	fontSize: "12px",
 	cursor: "pointer",
 	fontWeight: "400",
+};
+
+const jobCancelButtonStyle: React.CSSProperties = {
+	padding: "4px 8px",
+	backgroundColor: "#ea8600",
+	color: "white",
+	border: "none",
+	borderRadius: "4px",
+	fontSize: "12px",
+	cursor: "pointer",
+	fontWeight: "500",
 };
 
 // Add CSS animations
