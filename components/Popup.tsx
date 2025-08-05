@@ -1,17 +1,17 @@
 import type React from "react";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { logger } from "../lib/logger";
 import {
 	areOptionsConfigured,
-	type ProcessingJob,
+	cleanupOldJobs,
 	type ExtensionState,
 	getExtensionState,
-	getJobsForTab,
 	getJobsByStatus,
+	getJobsForTab,
+	type ProcessingJob,
 	removeJob,
 	retryJob,
-	cleanupOldJobs,
 } from "../lib/storage";
-import { logger } from "../lib/logger";
 
 const Popup: React.FC = () => {
 	const [allJobs, setAllJobs] = useState<ProcessingJob[]>([]);
@@ -28,35 +28,41 @@ const Popup: React.FC = () => {
 		const loadState = async () => {
 			try {
 				logger.popup.action("Loading initial state");
-				
+
 				// Get current tab ID
-				const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+				const [tab] = await chrome.tabs.query({
+					active: true,
+					currentWindow: true,
+				});
 				const tabId = tab?.id || null;
 				setCurrentTabId(tabId);
-				
+
 				// Load jobs and options
 				const [extensionState, optionsConfigured] = await Promise.all([
 					getExtensionState(),
 					areOptionsConfigured(),
 				]);
-				
+
 				logger.debug("Options configured:", optionsConfigured);
 				logger.debug("Current tab ID:", tabId);
 				logger.debug("Total jobs found:", extensionState.activeJobs.length);
-				
+
 				setAllJobs(extensionState.activeJobs);
 				setIsOptionsConfigured(optionsConfigured);
-				
+
 				// Separate current tab jobs from others
 				if (tabId) {
-					const tabJobs = extensionState.activeJobs.filter(job => job.tabId === tabId);
-					const otherTabJobs = extensionState.activeJobs.filter(job => job.tabId !== tabId);
+					const tabJobs = extensionState.activeJobs.filter(
+						(job) => job.tabId === tabId,
+					);
+					const otherTabJobs = extensionState.activeJobs.filter(
+						(job) => job.tabId !== tabId,
+					);
 					setCurrentTabJobs(tabJobs);
 					setOtherJobs(otherTabJobs);
 					logger.debug("Current tab jobs:", tabJobs.length);
 					logger.debug("Other tab jobs:", otherTabJobs.length);
 				}
-				
 			} catch (error) {
 				logger.error("Failed to load popup state:", error);
 			} finally {
@@ -76,18 +82,22 @@ const Popup: React.FC = () => {
 			if (changes.extensionState && changes.extensionState.newValue) {
 				const newState: ExtensionState = changes.extensionState.newValue;
 				logger.debug("Jobs updated", { totalJobs: newState.activeJobs.length });
-				
+
 				setAllJobs(newState.activeJobs);
-				
+
 				// Update current tab and other jobs
 				if (currentTabId) {
-					const tabJobs = newState.activeJobs.filter(job => job.tabId === currentTabId);
-					const otherTabJobs = newState.activeJobs.filter(job => job.tabId !== currentTabId);
+					const tabJobs = newState.activeJobs.filter(
+						(job) => job.tabId === currentTabId,
+					);
+					const otherTabJobs = newState.activeJobs.filter(
+						(job) => job.tabId !== currentTabId,
+					);
 					setCurrentTabJobs(tabJobs);
 					setOtherJobs(otherTabJobs);
-					logger.debug("Updated job distribution", { 
-						currentTabJobs: tabJobs.length, 
-						otherJobs: otherTabJobs.length 
+					logger.debug("Updated job distribution", {
+						currentTabJobs: tabJobs.length,
+						otherJobs: otherTabJobs.length,
 					});
 				}
 			}
@@ -168,7 +178,9 @@ const Popup: React.FC = () => {
 		return job.tabInfo.articleTitle || job.tabInfo.title || job.tabInfo.domain;
 	};
 
-	const getJobStatus = (job: ProcessingJob): { emoji: string; text: string; color: string } => {
+	const getJobStatus = (
+		job: ProcessingJob,
+	): { emoji: string; text: string; color: string } => {
 		switch (job.status) {
 			case "processing":
 				return { emoji: "⏳", text: "Processing", color: "#4285f4" };
@@ -183,11 +195,22 @@ const Popup: React.FC = () => {
 
 	const getProcessingStage = (message?: string): string => {
 		if (!message) return "Processing";
-		if (message.includes("extraction") || message.includes("Analyzing") || message.includes("Loading")) {
+		if (
+			message.includes("extraction") ||
+			message.includes("Analyzing") ||
+			message.includes("Loading")
+		) {
 			return "Extracting content";
-		} else if (message.includes("speech") || message.includes("AI") || message.includes("generating")) {
+		} else if (
+			message.includes("speech") ||
+			message.includes("AI") ||
+			message.includes("generating")
+		) {
 			return "Generating speech";
-		} else if (message.includes("download") || message.includes("Preparing audio")) {
+		} else if (
+			message.includes("download") ||
+			message.includes("Preparing audio")
+		) {
 			return "Finalizing";
 		}
 		return "Processing";
@@ -199,69 +222,67 @@ const Popup: React.FC = () => {
 	};
 
 	// Helper components
-	const JobCard: React.FC<{ 
-		job: ProcessingJob; 
-		isCurrentTab: boolean; 
+	const JobCard: React.FC<{
+		job: ProcessingJob;
+		isCurrentTab: boolean;
 		showTabInfo: boolean;
 	}> = ({ job, isCurrentTab, showTabInfo }) => {
 		const status = getJobStatus(job);
 		const displayName = getJobDisplayName(job);
 		const elapsed = formatElapsedTime(job.startTime);
 		const stage = getProcessingStage(job.message);
-		
+
 		return (
-			<div style={{
-				...jobCardStyle,
-				...(isCurrentTab ? currentTabJobStyle : {}),
-			}}>
+			<div
+				style={{
+					...jobCardStyle,
+					...(isCurrentTab ? currentTabJobStyle : {}),
+				}}
+			>
 				<div style={jobHeaderStyle}>
 					<div style={jobStatusStyle}>
 						<span style={{ fontSize: "16px" }}>{status.emoji}</span>
-						<span style={{ color: status.color, fontWeight: "500", fontSize: "14px" }}>
+						<span
+							style={{
+								color: status.color,
+								fontWeight: "500",
+								fontSize: "14px",
+							}}
+						>
 							{status.text}
 						</span>
 					</div>
-					<div style={jobTimeStyle}>
-						{elapsed}
-					</div>
+					<div style={jobTimeStyle}>{elapsed}</div>
 				</div>
-				
-				{showTabInfo && (
-					<div style={jobTitleStyle}>
-						{displayName}
-					</div>
-				)}
-				
+
+				{showTabInfo && <div style={jobTitleStyle}>{displayName}</div>}
+
 				{job.status === "processing" && (
 					<div style={jobMessageStyle}>
 						{stage}: {job.message}
 					</div>
 				)}
-				
+
 				{job.status === "error" && (
-					<div style={jobErrorStyle}>
-						{job.message}
-					</div>
+					<div style={jobErrorStyle}>{job.message}</div>
 				)}
-				
+
 				{job.status === "success" && job.filename && (
-					<div style={jobSuccessStyle}>
-						Downloaded: {job.filename}
-					</div>
+					<div style={jobSuccessStyle}>Downloaded: {job.filename}</div>
 				)}
-				
+
 				<div style={jobActionsStyle}>
 					{job.status === "error" && (
-						<button 
-							onClick={() => handleRetryJob(job.id)} 
+						<button
+							onClick={() => handleRetryJob(job.id)}
 							style={jobActionButtonStyle}
 						>
 							Retry
 						</button>
 					)}
 					{job.status !== "processing" && (
-						<button 
-							onClick={() => handleRemoveJob(job.id)} 
+						<button
+							onClick={() => handleRemoveJob(job.id)}
 							style={jobRemoveButtonStyle}
 						>
 							Remove
@@ -308,10 +329,14 @@ const Popup: React.FC = () => {
 	}
 
 	// Get active job for current tab
-	const currentTabJob = currentTabJobs.find(job => job.status === "processing") || currentTabJobs[0];
+	const currentTabJob =
+		currentTabJobs.find((job) => job.status === "processing") ||
+		currentTabJobs[0];
 	const hasCurrentTabJob = !!currentTabJob;
 	const hasOtherJobs = otherJobs.length > 0;
-	const completedJobs = allJobs.filter(job => job.status === "success" || job.status === "error");
+	const completedJobs = allJobs.filter(
+		(job) => job.status === "success" || job.status === "error",
+	);
 
 	return (
 		<div style={containerStyle}>
@@ -319,7 +344,7 @@ const Popup: React.FC = () => {
 				<h2 style={titleStyle}>Listen Later</h2>
 				{allJobs.length > 0 && (
 					<div style={headerBadgeStyle}>
-						{allJobs.filter(job => job.status === "processing").length} active
+						{allJobs.filter((job) => job.status === "processing").length} active
 					</div>
 				)}
 			</div>
@@ -328,15 +353,17 @@ const Popup: React.FC = () => {
 				{hasCurrentTabJob ? (
 					<div style={currentTabSectionStyle}>
 						<h3 style={sectionTitleStyle}>Current Page</h3>
-						<JobCard 
-							job={currentTabJob} 
-							isCurrentTab={true} 
+						<JobCard
+							job={currentTabJob}
+							isCurrentTab={true}
 							showTabInfo={false}
 						/>
 					</div>
 				) : (
 					<div style={idleSectionStyle}>
-						<p style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#666" }}>
+						<p
+							style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#666" }}
+						>
 							Convert the current page to speech
 						</p>
 						<button onClick={handleGenerateClick} style={primaryButtonStyle}>
@@ -348,22 +375,26 @@ const Popup: React.FC = () => {
 				{/* Other Active Jobs */}
 				{hasOtherJobs && (
 					<div style={otherJobsSectionStyle}>
-						<button 
+						<button
 							onClick={() => setShowOtherJobs(!showOtherJobs)}
 							style={collapsibleButtonStyle}
 						>
 							<span>Other Tabs ({otherJobs.length})</span>
-							<span style={{ transform: showOtherJobs ? "rotate(180deg)" : "rotate(0deg)" }}>
+							<span
+								style={{
+									transform: showOtherJobs ? "rotate(180deg)" : "rotate(0deg)",
+								}}
+							>
 								▼
 							</span>
 						</button>
 						{showOtherJobs && (
 							<div style={otherJobsListStyle}>
-								{otherJobs.map(job => (
-									<JobCard 
-										key={job.id} 
-										job={job} 
-										isCurrentTab={false} 
+								{otherJobs.map((job) => (
+									<JobCard
+										key={job.id}
+										job={job}
+										isCurrentTab={false}
 										showTabInfo={true}
 									/>
 								))}
@@ -375,14 +406,9 @@ const Popup: React.FC = () => {
 				{/* Action Buttons */}
 				<div style={actionButtonsStyle}>
 					{!hasCurrentTabJob && (
-						<>
-							<button onClick={handleGenerateClick} style={primaryButtonStyle}>
-								Generate Speech
-							</button>
-							<button onClick={openOptionsPage} style={secondaryButtonStyle}>
-								Settings
-							</button>
-						</>
+						<button onClick={openOptionsPage} style={secondaryButtonStyle}>
+							Settings
+						</button>
 					)}
 					{completedJobs.length > 0 && (
 						<button onClick={handleCleanupJobs} style={cleanupButtonStyle}>
@@ -427,6 +453,7 @@ const primaryButtonStyle: React.CSSProperties = {
 	fontSize: "14px",
 	cursor: "pointer",
 	fontWeight: "500",
+	minWidth: "120px",
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
@@ -438,6 +465,8 @@ const secondaryButtonStyle: React.CSSProperties = {
 	fontSize: "14px",
 	cursor: "pointer",
 	fontWeight: "500",
+	minWidth: "120px",
+	alignSelf: "center",
 };
 
 const errorStyle: React.CSSProperties = {
@@ -754,7 +783,7 @@ styleSheet.textContent = `
 	}
 `;
 if (!document.head.querySelector('style[data-listen-later="animations"]')) {
-	styleSheet.setAttribute('data-listen-later', 'animations');
+	styleSheet.setAttribute("data-listen-later", "animations");
 	document.head.appendChild(styleSheet);
 }
 
