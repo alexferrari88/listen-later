@@ -297,7 +297,12 @@ const Popup: React.FC = () => {
 					<div style={jobTimeStyle}>{elapsed}</div>
 				</div>
 
-				{showTabInfo && <div style={jobTitleStyle}>{displayName}</div>}
+				{showTabInfo && (
+					<div>
+						<div style={jobTitleStyle}>{displayName}</div>
+						<div style={jobUrlStyle}>{job.tabInfo.url}</div>
+					</div>
+				)}
 
 				{job.status === "processing" && (
 					<div>
@@ -798,6 +803,16 @@ const jobTitleStyle: React.CSSProperties = {
 	color: "#333",
 	marginBottom: "6px",
 	lineHeight: "1.3",
+};
+
+const jobUrlStyle: React.CSSProperties = {
+	fontSize: "11px",
+	color: "#666",
+	marginBottom: "6px",
+	fontFamily: "monospace",
+	overflow: "hidden",
+	textOverflow: "ellipsis",
+	whiteSpace: "nowrap",
 };
 
 const jobMessageStyle: React.CSSProperties = {
