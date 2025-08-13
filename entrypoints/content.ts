@@ -13,7 +13,7 @@ declare global {
 }
 
 export default defineContentScript({
-	matches: ["http://localhost/*"], // Restrictive pattern - only used for programmatic injection
+	matches: ["http://listen-later-extension.localhost/*"], // Non-conflicting pattern - only used for programmatic injection
 	main() {
 		logger.info("Content script loaded");
 		logger.debug("Environment check:", {
