@@ -1,5 +1,5 @@
 // Import lamejs for MP3 encoding
-import * as lamejs from "lamejs";
+import * as lamejs from "@breezystack/lamejs";
 import { logger, withAsyncLogging } from "../lib/logger";
 
 // Browser-compatible base64 conversion helpers

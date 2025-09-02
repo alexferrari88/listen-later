@@ -39,8 +39,8 @@
 		"wxt": "^0.20.8"
 	},
 	"dependencies": {
+		"@breezystack/lamejs": "^1.2.7",
 		"@mozilla/readability": "^0.6.0",
-		"lamejs": "^1.2.1",
 		"react": "^19.1.1",
 		"react-dom": "^19.1.1"
 	}
