@@ -13,6 +13,7 @@ import {
 	resetExtensionState,
 	setExtensionOptions,
 	setExtensionState,
+	updateJob,
 	type TabInfo,
 } from "./storage";
 
@@ -304,6 +305,84 @@ describe("Storage Functions", () => {
 		});
 	});
 
+	describe("updateJob function", () => {
+		it("should stamp completedAt when transitioning to success", async () => {
+			const now = Date.now();
+			const job = {
+				id: "job-success",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "processing" as const,
+				message: "Working",
+				startTime: now - 1000,
+				text: "test",
+			};
+
+			mockStorageData["extensionState"] = {
+				activeJobs: [job],
+				maxConcurrentJobs: 3,
+			};
+
+			await updateJob("job-success", { status: "success" });
+			const state = await getExtensionState();
+			const updatedJob = state.activeJobs[0];
+			expect(updatedJob.completedAt).toBeDefined();
+			expect(updatedJob.completedAt).toBeGreaterThanOrEqual(job.startTime);
+		});
+
+		it("should honor provided completedAt timestamps", async () => {
+			const now = Date.now();
+			const explicitCompletedAt = now - 5000;
+			const job = {
+				id: "job-custom",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "processing" as const,
+				message: "Working",
+				startTime: now - 15000,
+				text: "test",
+			};
+
+			mockStorageData["extensionState"] = {
+				activeJobs: [job],
+				maxConcurrentJobs: 3,
+			};
+
+			await updateJob("job-custom", {
+				status: "error",
+				completedAt: explicitCompletedAt,
+			});
+
+			const state = await getExtensionState();
+			const updatedJob = state.activeJobs[0];
+			expect(updatedJob.completedAt).toBe(explicitCompletedAt);
+		});
+
+		it("should clear completedAt when returning to a processing state", async () => {
+			const now = Date.now();
+			const job = {
+				id: "job-reset",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "success" as const,
+				message: "Done",
+				startTime: now - 20000,
+				completedAt: now - 5000,
+				text: "test",
+			};
+
+			mockStorageData["extensionState"] = {
+				activeJobs: [job],
+				maxConcurrentJobs: 3,
+			};
+
+			await updateJob("job-reset", { status: "processing" });
+			const state = await getExtensionState();
+			const updatedJob = state.activeJobs[0];
+			expect(updatedJob.completedAt).toBeUndefined();
+		});
+	});
+
 	describe("cleanupOldJobs function", () => {
 		it("should remove preparing jobs older than 10 minutes", async () => {
 			const oldPreparingJob = {
@@ -383,7 +462,8 @@ describe("Storage Functions", () => {
 				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
 				status: "success" as const,
 				message: "Completed",
-				startTime: Date.now() - 6 * 60 * 1000, // 6 minutes ago
+				startTime: Date.now() - 15 * 60 * 1000,
+				completedAt: Date.now() - 6 * 60 * 1000, // completed 6 minutes ago
 				text: "test text",
 			};
 
@@ -406,7 +486,8 @@ describe("Storage Functions", () => {
 				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
 				status: "success" as const,
 				message: "Completed",
-				startTime: Date.now() - 3 * 60 * 1000, // 3 minutes ago
+				startTime: Date.now() - 10 * 60 * 1000,
+				completedAt: Date.now() - 3 * 60 * 1000, // completed 3 minutes ago
 				text: "test text",
 			};
 
@@ -423,6 +504,31 @@ describe("Storage Functions", () => {
 			expect(finalState.activeJobs[0].id).toBe("new-success");
 		});
 
+		it("should use completion time when evaluating success job age", async () => {
+			const job = {
+				id: "success-long-run",
+				tabId: 1,
+				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
+				status: "success" as const,
+				message: "Completed",
+				startTime: Date.now() - 30 * 60 * 1000, // started 30 minutes ago
+				completedAt: Date.now() - 2 * 60 * 1000, // completed 2 minutes ago
+				text: "test text",
+			};
+
+			const initialState: ExtensionState = {
+				activeJobs: [job],
+				maxConcurrentJobs: 3,
+			};
+			mockStorageData["extensionState"] = initialState;
+
+			await cleanupOldJobs();
+
+			const finalState = await getExtensionState();
+			expect(finalState.activeJobs).toHaveLength(1);
+			expect(finalState.activeJobs[0].id).toBe("success-long-run");
+		});
+
 		it("should preserve error jobs newer than 24 hours", async () => {
 			const newErrorJob = {
 				id: "new-error",
@@ -430,7 +536,8 @@ describe("Storage Functions", () => {
 				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
 				status: "error" as const,
 				message: "Failed",
-				startTime: Date.now() - 6 * 60 * 1000, // 6 minutes ago
+				startTime: Date.now() - 60 * 60 * 1000,
+				completedAt: Date.now() - 6 * 60 * 1000, // failed 6 minutes ago
 				text: "test text",
 			};
 
@@ -454,7 +561,8 @@ describe("Storage Functions", () => {
 				tabInfo: { url: "http://test.com", title: "Test", domain: "test.com" },
 				status: "error" as const,
 				message: "Failed",
-				startTime: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
+				startTime: Date.now() - 26 * 60 * 60 * 1000,
+				completedAt: Date.now() - 25 * 60 * 60 * 1000, // failed 25 hours ago
 				text: "test text",
 			};
 
@@ -522,7 +630,8 @@ describe("Storage Functions", () => {
 					},
 					status: "success" as const,
 					message: "Done",
-					startTime: now - 6 * 60 * 1000, // 6 minutes ago - should remove
+					startTime: now - 20 * 60 * 1000,
+					completedAt: now - 6 * 60 * 1000, // completed 6 minutes ago - should remove
 					text: "test text 4",
 				},
 				{
@@ -535,7 +644,8 @@ describe("Storage Functions", () => {
 					},
 					status: "success" as const,
 					message: "Done",
-					startTime: now - 3 * 60 * 1000, // 3 minutes ago - should keep
+					startTime: now - 10 * 60 * 1000,
+					completedAt: now - 3 * 60 * 1000, // completed 3 minutes ago - should keep
 					text: "test text 5",
 				},
 				{
@@ -548,7 +658,8 @@ describe("Storage Functions", () => {
 					},
 					status: "error" as const,
 					message: "Failed",
-					startTime: now - 6 * 60 * 1000, // 6 minutes ago - should keep
+					startTime: now - 60 * 60 * 1000,
+					completedAt: now - 6 * 60 * 1000, // failed 6 minutes ago - should keep
 					text: "test text 6",
 				},
 				{
@@ -561,7 +672,8 @@ describe("Storage Functions", () => {
 					},
 					status: "error" as const,
 					message: "Failed",
-					startTime: now - 25 * 60 * 60 * 1000, // 25 hours ago - should remove
+					startTime: now - 26 * 60 * 60 * 1000,
+					completedAt: now - 25 * 60 * 60 * 1000, // failed 25 hours ago - should remove
 					text: "test text 7",
 				},
 			];

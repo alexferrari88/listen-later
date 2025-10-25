@@ -224,8 +224,9 @@ const Popup: React.FC = () => {
 		}
 	};
 
-	const formatElapsedTime = (startTime: number): string => {
-		const elapsed = Math.floor((currentTime - startTime) / 1000);
+	const formatElapsedTime = (startTime: number, endTime?: number): string => {
+		const effectiveEndTime = endTime ?? currentTime;
+		const elapsed = Math.max(0, Math.floor((effectiveEndTime - startTime) / 1000));
 		if (elapsed < 60) {
 			return `${elapsed}s`;
 		}
@@ -316,7 +317,7 @@ const Popup: React.FC = () => {
 	}> = ({ job, isCurrentTab, showTabInfo }) => {
 		const status = getJobStatus(job);
 		const displayName = getJobDisplayName(job);
-		const elapsed = formatElapsedTime(job.startTime);
+		const elapsed = formatElapsedTime(job.startTime, job.completedAt);
 		const stageInfo = getProcessingStage(job.message);
 
 		return (

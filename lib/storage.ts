@@ -19,6 +19,7 @@ export interface ProcessingJob {
 	message?: string;
 	progress?: number; // 0-100 percentage progress
 	startTime: number;
+	completedAt?: number;
 	text?: string; // for retry capability
 	filename?: string; // generated filename
 }
@@ -375,10 +376,28 @@ export async function updateJob(
 		return;
 	}
 
-	state.activeJobs[jobIndex] = { ...state.activeJobs[jobIndex], ...updates };
+	const existingJob = state.activeJobs[jobIndex];
+	const nextJob: ProcessingJob = { ...existingJob, ...updates };
+
+	if (updates.status) {
+		if (updates.status === "success" || updates.status === "error") {
+			nextJob.completedAt =
+				updates.completedAt ?? existingJob.completedAt ?? Date.now();
+		} else if (updates.status === "preparing" || updates.status === "processing") {
+			nextJob.completedAt = undefined;
+		}
+	}
+
+	state.activeJobs[jobIndex] = nextJob;
 	await setExtensionState(state);
 
-	logger.debug("Updated job", { jobId, updates });
+	logger.debug("Updated job", {
+		jobId,
+		updates: {
+			...updates,
+			completedAt: nextJob.completedAt,
+		},
+	});
 }
 
 export async function getJob(jobId: string): Promise<ProcessingJob | null> {
@@ -421,11 +440,18 @@ export async function cleanupOldJobs(): Promise<void> {
 	const now = Date.now();
 	const initialCount = state.activeJobs.length;
 
+	const getJobAge = (job: ProcessingJob): number => {
+		if (job.status === "success" || job.status === "error") {
+			return now - (job.completedAt ?? job.startTime);
+		}
+		return now - job.startTime;
+	};
+
 	// Remove jobs based on status and age
 	state.activeJobs = state.activeJobs.filter((job) => {
 		if (job.status === "processing") return true; // Always keep processing jobs
 
-		const jobAge = now - job.startTime;
+		const jobAge = getJobAge(job);
 		if (job.status === "preparing") {
 			return jobAge < PREPARING_JOB_CLEANUP_TIME; // Clean preparing jobs after 10 minutes
 		}
