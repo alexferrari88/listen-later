@@ -7,6 +7,7 @@ A Chrome extension that converts web articles into speech using Google Gemini AP
 - 🎧 Convert any webpage to speech using Google Gemini TTS
 - 📖 Intelligent content extraction using Mozilla's Readability.js
 - 💾 Download generated audio as MP3 files
+- ✂️ Automatically chunks long articles into sub-10-minute batches to bypass Gemini's ~11-minute per-call audio ceiling and stitches them into a single MP3
 - ⚙️ Configurable voice settings and API options
 - 🔄 Persistent state management across sessions
 - 🎨 Clean, React-based user interface

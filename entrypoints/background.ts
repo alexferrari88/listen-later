@@ -713,13 +713,28 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 	const CONTEXT_TOKEN_LIMIT = 32000;
 	const TARGET_CHUNK_TOKENS = 30000;
 	const TOKEN_SAFETY_MARGIN = 2000;
+	const MAX_AUDIO_WORDS_PER_CHUNK = 600;
+	const WORDS_TO_TOKENS_MULTIPLIER = 1.3;
+	const AUDIO_DURATION_TOKEN_LIMIT = Math.floor(
+		MAX_AUDIO_WORDS_PER_CHUNK * WORDS_TO_TOKENS_MULTIPLIER,
+	);
 	const chunkTokenBudget = Math.max(
 		500,
 		Math.min(
 			TARGET_CHUNK_TOKENS,
 			CONTEXT_TOKEN_LIMIT - promptPrefixTokens - TOKEN_SAFETY_MARGIN,
+			AUDIO_DURATION_TOKEN_LIMIT,
 		),
 	);
+
+	logger.debug("Calculated chunk budget", {
+		chunkTokenBudget,
+		promptPrefixTokens,
+		contextLimit: CONTEXT_TOKEN_LIMIT,
+		tokenSafetyMargin: TOKEN_SAFETY_MARGIN,
+		maxAudioWordsPerChunk: MAX_AUDIO_WORDS_PER_CHUNK,
+		audioTokenCeiling: AUDIO_DURATION_TOKEN_LIMIT,
+	});
 
 	const textChunks = splitTextIntoChunks(job.text, chunkTokenBudget);
 	if (textChunks.length === 0) {
@@ -767,6 +782,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 			chunkCount,
 			chunkIndex: index,
 			chunkTextLength: chunkPromptText.length,
+			chunkWordCount,
 			endpoint,
 			jobId,
 			modelName: options.modelName,
@@ -877,6 +893,7 @@ type FetchSpeechChunkParams = {
 	chunkCount: number;
 	chunkIndex: number;
 	chunkTextLength: number;
+	chunkWordCount: number;
 	endpoint: string;
 	jobId: string;
 	modelName?: string;
@@ -910,12 +927,16 @@ const buildApiErrorMessage = (response: Response, errorData: any): string => {
 	return errorMessage;
 };
 
+const CHUNK_FETCH_TIMEOUT_MS = 6 * 60 * 1000;
+const CHUNK_HEARTBEAT_INTERVAL_MS = 60 * 1000;
+
 const fetchSpeechChunk = withAsyncLogging(
 	async ({
 		apiKey,
 		chunkCount,
 		chunkIndex,
 		chunkTextLength,
+		chunkWordCount,
 		endpoint,
 		jobId,
 		modelName,
@@ -924,11 +945,13 @@ const fetchSpeechChunk = withAsyncLogging(
 		selectedPromptId,
 		voice,
 	}: FetchSpeechChunkParams) => {
+		const chunkLabel = `chunk ${chunkIndex + 1}/${chunkCount}`;
 		logger.debug("Sending API request", {
 			jobId,
 			chunkIndex: chunkIndex + 1,
 			chunkCount,
 			chunkTextLength,
+			chunkWordCount,
 		});
 
 		logger.background.api(endpoint, undefined, {
@@ -943,6 +966,22 @@ const fetchSpeechChunk = withAsyncLogging(
 		});
 
 		let response: Response;
+		const abortController = new AbortController();
+		const timeoutId = setTimeout(() => {
+			abortController.abort();
+		}, CHUNK_FETCH_TIMEOUT_MS);
+		const heartbeatId = setInterval(() => {
+			updateJob(jobId, {
+				message: `Still generating speech ${chunkLabel} (~${chunkWordCount} words, ${getTimeEstimateLabel(chunkWordCount)} remaining)...`,
+			})
+				.catch((error) =>
+					logger.error("Failed to update chunk heartbeat", {
+						jobId,
+						chunkIndex: chunkIndex + 1,
+						error,
+					}),
+				);
+		}, CHUNK_HEARTBEAT_INTERVAL_MS);
 		try {
 			response = await fetch(endpoint, {
 				method: "POST",
@@ -951,13 +990,24 @@ const fetchSpeechChunk = withAsyncLogging(
 					"x-goog-api-key": apiKey,
 				},
 				body: JSON.stringify(requestBody),
+				signal: abortController.signal,
 			});
 		} catch (error) {
+			clearTimeout(timeoutId);
+			clearInterval(heartbeatId);
+			if (error instanceof DOMException && error.name === "AbortError") {
+				logger.error("API request timed out", { jobId, chunkIndex, chunkCount });
+				throw new Error(
+					"Gemini took too long to respond for this chunk. We stopped waiting after 6 minutes to keep the extension responsive. Please try again or shorten the article.",
+				);
+			}
 			logger.error("Network error during API call", { jobId, chunkIndex, error });
 			throw new Error(
 				"Network error occurred. Please check your internet connection and try again.",
 			);
 		}
+		clearTimeout(timeoutId);
+		clearInterval(heartbeatId);
 
 		logger.background.api(endpoint, response.status);
 
