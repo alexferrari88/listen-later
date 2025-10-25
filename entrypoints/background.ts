@@ -1,6 +1,7 @@
 // Import lamejs for MP3 encoding
 import * as lamejs from "@breezystack/lamejs";
 import { logger, withAsyncLogging } from "../lib/logger";
+import { estimateTokenCount, splitTextIntoChunks } from "../lib/textChunker";
 
 // Browser-compatible base64 conversion helpers
 const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -18,6 +19,17 @@ const uint8ArrayToBase64 = (uint8Array: Uint8Array): string => {
 		binaryString += String.fromCharCode(uint8Array[i]);
 	}
 	return btoa(binaryString);
+};
+
+const concatenateUint8Arrays = (arrays: Uint8Array[]): Uint8Array => {
+	const totalLength = arrays.reduce((sum, array) => sum + array.length, 0);
+	const result = new Uint8Array(totalLength);
+	let offset = 0;
+	for (const array of arrays) {
+		result.set(array, offset);
+		offset += array.length;
+	}
+	return result;
 };
 
 import {
@@ -695,157 +707,96 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 	// Fallback to documentary style if prompt not found
 	const promptTemplate = selectedPrompt?.template || 
 		"Narrate the following text in a professional, authoritative, and well-paced documentary style: ${content}";
-	
-	const finalText = substituteSpeechStyleTemplate(promptTemplate, job.text);
-	
+	const promptPrefixTokens = estimateTokenCount(
+		promptTemplate.replace(/\$\{content\}/g, ""),
+	);
+	const CONTEXT_TOKEN_LIMIT = 32000;
+	const TARGET_CHUNK_TOKENS = 30000;
+	const TOKEN_SAFETY_MARGIN = 2000;
+	const chunkTokenBudget = Math.max(
+		500,
+		Math.min(
+			TARGET_CHUNK_TOKENS,
+			CONTEXT_TOKEN_LIMIT - promptPrefixTokens - TOKEN_SAFETY_MARGIN,
+		),
+	);
+
+	const textChunks = splitTextIntoChunks(job.text, chunkTokenBudget);
+	if (textChunks.length === 0) {
+		throw new Error(
+			"The extracted article text is empty. Please refresh the page and try again.",
+		);
+	}
+
+	const chunkCount = textChunks.length;
+
 	logger.debug("Using speech style prompt", {
 		jobId,
 		selectedPromptId,
 		promptName: selectedPrompt?.name || "Default Documentary",
-		finalTextLength: finalText.length,
+		chunkCount,
+		chunkTokenBudget,
+		promptPrefixTokens,
 	});
 
-	// Make API call to Gemini
+	// Prepare API endpoint
 	const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${options.modelName}:generateContent`;
-	logger.background.api(endpoint, undefined, {
-		jobId,
-		modelName: options.modelName,
-		voice: options.voice,
-		textLength: job.text.length,
-		selectedPromptId,
-		promptName: selectedPrompt?.name,
-	});
 
-	const requestBody = {
-		contents: [
-			{
-				parts: [
-					{
-						text: finalText,
-					},
-				],
-			},
-		],
-		generationConfig: {
-			responseModalities: ["AUDIO"],
-			speechConfig: {
-				voiceConfig: {
-					prebuiltVoiceConfig: {
-						voiceName: options.voice,
-					},
-				},
-			},
-		},
-	};
-	logger.debug("Sending API request", { endpoint, requestBody });
+	const totalWordCount = getWordCount(job.text);
+	const totalTimeEstimate = getTimeEstimateLabel(totalWordCount);
+	const audioChunks: string[] = [];
 
-	// Calculate estimated time based on word count
-	const wordCount = job.text.split(/\s+/).length;
-	let timeEstimate = "30 seconds to 2 minutes";
-	if (wordCount > 1500) {
-		timeEstimate = "3 to 8 minutes";
-	} else if (wordCount > 500) {
-		timeEstimate = "1 to 4 minutes";
-	}
+	for (let index = 0; index < chunkCount; index++) {
+		const rawChunk = textChunks[index];
+		const chunkPromptText = substituteSpeechStyleTemplate(promptTemplate, rawChunk);
+		const chunkWordCount = getWordCount(rawChunk);
+		const chunkLabel = chunkCount === 1
+			? `AI is generating speech (~${totalWordCount} words, estimated ${totalTimeEstimate})...`
+			: `Generating speech chunk ${index + 1}/${chunkCount} (~${chunkWordCount} words, est. ${getTimeEstimateLabel(chunkWordCount)})...`;
 
-	// Update job status during API call
-	await updateJob(jobId, {
-		message: `AI is generating speech (~${wordCount} words, estimated ${timeEstimate})...`,
-		progress: 15,
-	});
+		const chunkProgressStart = 10 + Math.floor((index / chunkCount) * 60);
+		const chunkProgressEnd = 10 + Math.floor(((index + 1) / chunkCount) * 60);
 
-	let response: Response;
-	try {
-		response = await fetch(endpoint, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"x-goog-api-key": options.apiKey,
-			},
-			body: JSON.stringify(requestBody),
+		await updateJob(jobId, {
+			message: chunkLabel,
+			progress: chunkProgressStart,
 		});
-	} catch (error) {
-		logger.error("Network error during API call", { jobId, error });
-		throw new Error(
-			"Network error occurred. Please check your internet connection and try again.",
-		);
-	}
 
-	logger.background.api(endpoint, response.status);
-
-	if (!response.ok) {
-		let errorData: any = {};
-		try {
-			errorData = await response.json();
-		} catch {
-			// Response body is not JSON, ignore
-		}
-
-		logger.error("API request failed", {
+		const audioData = await fetchSpeechChunk({
+			apiKey: options.apiKey,
+			chunkCount,
+			chunkIndex: index,
+			chunkTextLength: chunkPromptText.length,
+			endpoint,
 			jobId,
-			status: response.status,
-			statusText: response.statusText,
-			errorData,
+			modelName: options.modelName,
+			requestBody: buildGeminiRequestBody(chunkPromptText, options.voice),
+			selectedPromptId,
+			promptName: selectedPrompt?.name,
+			voice: options.voice,
 		});
 
-		// Provide more specific error messages based on status code
-		let errorMessage = `API error: ${response.status} ${response.statusText}`;
-		if (response.status === 401) {
-			errorMessage =
-				"API key is invalid or expired. Please check your API key in settings.";
-		} else if (response.status === 403) {
-			errorMessage =
-				"API access forbidden. Please verify your API key permissions.";
-		} else if (response.status === 429) {
-			errorMessage =
-				"API rate limit exceeded. Please wait a few minutes and try again.";
-		} else if (response.status === 400) {
-			errorMessage =
-				"Invalid request sent to API. The content might be too long or contain unsupported characters.";
-		} else if (response.status >= 500) {
-			errorMessage =
-				"Gemini API is currently experiencing issues. Please try again later.";
-		} else if (errorData.error?.message) {
-			errorMessage = `API error: ${errorData.error.message}`;
-		}
+		audioChunks.push(audioData);
 
-		throw new Error(errorMessage);
+		await updateJob(jobId, {
+			message:
+				chunkCount === 1
+					? "Speech chunk generated successfully."
+					: `Chunk ${index + 1}/${chunkCount} generated.`,
+			progress: chunkProgressEnd,
+		});
 	}
 
-	let data: any;
-	try {
-		data = await response.json();
-	} catch (error) {
-		logger.error("Failed to parse API response JSON", { jobId, error });
-		throw new Error(
-			"Received invalid response from Gemini API. Please try again.",
-		);
-	}
-
-	logger.debug("API response received", {
-		jobId,
-		hasCandidates: !!data.candidates,
-		candidateCount: data.candidates?.length || 0,
-		hasAudioData: !!data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data,
-	});
-
-	// Update progress after receiving API response
+	// Update progress after receiving API responses
 	await updateJob(jobId, {
 		message: "Speech generated successfully - processing audio...",
 		progress: 85,
 	});
 
-	const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-	if (!audioData) {
-		logger.error("No audio data in API response", { jobId, data });
-		throw new Error("No audio data received from Gemini API");
-	}
-
 	// Convert base64 to blob and download
 	logger.debug("Starting audio download", {
 		jobId,
-		audioDataLength: audioData.length,
+		chunkCount,
 		filename: job.filename,
 	});
 
@@ -855,7 +806,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 		progress: 95,
 	});
 
-	await downloadAudio(jobId, audioData);
+	await downloadAudio(jobId, audioChunks);
 
 	// Update job to success status
 	await updateJob(jobId, {
@@ -878,26 +829,217 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 	});
 }, "generateSpeech");
 
+const WORD_COUNT_REGEX = /\s+/;
+
+const getWordCount = (text: string): number => {
+	const trimmed = text.trim();
+	if (!trimmed) {
+		return 0;
+	}
+
+	return trimmed.split(WORD_COUNT_REGEX).filter(Boolean).length;
+};
+
+const getTimeEstimateLabel = (wordCount: number): string => {
+	if (wordCount > 1500) {
+		return "3 to 8 minutes";
+	}
+	if (wordCount > 500) {
+		return "1 to 4 minutes";
+	}
+	return "30 seconds to 2 minutes";
+};
+
+const buildGeminiRequestBody = (text: string, voiceName: string | undefined) => ({
+	contents: [
+		{
+			parts: [
+				{
+					text,
+				},
+			],
+		},
+	],
+	generationConfig: {
+		responseModalities: ["AUDIO"],
+		speechConfig: {
+			voiceConfig: {
+				prebuiltVoiceConfig: {
+					voiceName,
+				},
+			},
+		},
+	},
+});
+
+type FetchSpeechChunkParams = {
+	apiKey: string;
+	chunkCount: number;
+	chunkIndex: number;
+	chunkTextLength: number;
+	endpoint: string;
+	jobId: string;
+	modelName?: string;
+	promptName?: string;
+	requestBody: Record<string, unknown>;
+	selectedPromptId?: string;
+	voice?: string;
+};
+
+const buildApiErrorMessage = (response: Response, errorData: any): string => {
+	let errorMessage = `API error: ${response.status} ${response.statusText}`;
+	if (response.status === 401) {
+		errorMessage =
+			"API key is invalid or expired. Please check your API key in settings.";
+	} else if (response.status === 403) {
+		errorMessage =
+			"API access forbidden. Please verify your API key permissions.";
+	} else if (response.status === 429) {
+		errorMessage =
+			"API rate limit exceeded. Please wait a few minutes and try again.";
+	} else if (response.status === 400) {
+		errorMessage =
+			"Invalid request sent to API. The content might be too long or contain unsupported characters.";
+	} else if (response.status >= 500) {
+		errorMessage =
+			"Gemini API is currently experiencing issues. Please try again later.";
+	} else if (errorData?.error?.message) {
+		errorMessage = `API error: ${errorData.error.message}`;
+	}
+
+	return errorMessage;
+};
+
+const fetchSpeechChunk = withAsyncLogging(
+	async ({
+		apiKey,
+		chunkCount,
+		chunkIndex,
+		chunkTextLength,
+		endpoint,
+		jobId,
+		modelName,
+		promptName,
+		requestBody,
+		selectedPromptId,
+		voice,
+	}: FetchSpeechChunkParams) => {
+		logger.debug("Sending API request", {
+			jobId,
+			chunkIndex: chunkIndex + 1,
+			chunkCount,
+			chunkTextLength,
+		});
+
+		logger.background.api(endpoint, undefined, {
+			jobId,
+			modelName,
+			voice,
+			chunkIndex: chunkIndex + 1,
+			chunkCount,
+			chunkTextLength,
+			selectedPromptId,
+			promptName,
+		});
+
+		let response: Response;
+		try {
+			response = await fetch(endpoint, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-goog-api-key": apiKey,
+				},
+				body: JSON.stringify(requestBody),
+			});
+		} catch (error) {
+			logger.error("Network error during API call", { jobId, chunkIndex, error });
+			throw new Error(
+				"Network error occurred. Please check your internet connection and try again.",
+			);
+		}
+
+		logger.background.api(endpoint, response.status);
+
+		if (!response.ok) {
+			let errorData: any = {};
+			try {
+				errorData = await response.json();
+			} catch {
+				// Ignore JSON parse failures for error payloads
+			}
+
+			logger.error("API request failed", {
+				jobId,
+				chunkIndex,
+				chunkCount,
+				status: response.status,
+				statusText: response.statusText,
+				errorData,
+			});
+
+			throw new Error(buildApiErrorMessage(response, errorData));
+		}
+
+		let data: any;
+		try {
+			data = await response.json();
+		} catch (error) {
+			logger.error("Failed to parse API response JSON", { jobId, chunkIndex, error });
+			throw new Error(
+				"Received invalid response from Gemini API. Please try again.",
+			);
+		}
+
+		const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+		if (!audioData) {
+			logger.error("No audio data in API response", { jobId, chunkIndex, data });
+			throw new Error("No audio data received from Gemini API");
+		}
+
+		return audioData;
+	},
+	"fetchSpeechChunk",
+);
+
 const downloadAudio = withAsyncLogging(
-	async (jobId: string, base64Data: string) => {
+	async (jobId: string, base64Data: string | string[]) => {
 		// Get the job to access the filename
 		const job = await getJob(jobId);
 		if (!job) {
 			throw new Error(`Job ${jobId} not found`);
 		}
 
+		const audioChunks = Array.isArray(base64Data) ? base64Data : [base64Data];
+		if (audioChunks.length === 0) {
+			throw new Error("No audio data available for download");
+		}
+
 		logger.debug("Converting base64 PCM data to MP3 file", {
 			jobId,
-			dataLength: base64Data.length,
+			chunkCount: audioChunks.length,
 			filename: job.filename,
 		});
 
-		// Convert base64 to Uint8Array (raw PCM audio data from Gemini)
-		const pcmBuffer = base64ToUint8Array(base64Data);
-		logger.debug("PCM buffer created", { pcmBufferLength: pcmBuffer.length });
+		// Convert base64 chunks to Uint8Array buffers and merge them
+		const pcmBuffers = audioChunks.map((chunk, index) => {
+			const buffer = base64ToUint8Array(chunk);
+			logger.debug("PCM chunk decoded", {
+				jobId,
+				chunkIndex: index + 1,
+				pcmChunkLength: buffer.length,
+			});
+			return buffer;
+		});
+		const combinedPcmBuffer = concatenateUint8Arrays(pcmBuffers);
+		logger.debug("Combined PCM buffer created", {
+			jobId,
+			totalPcmLength: combinedPcmBuffer.length,
+		});
 
 		// Create MP3 file using lamejs encoding
-		const mp3Buffer = await createMp3File(pcmBuffer, {
+		const mp3Buffer = await createMp3File(combinedPcmBuffer, {
 			channels: 1, // Mono audio
 			sampleRate: 24000, // 24kHz sample rate (Gemini's output)
 			bitDepth: 16, // 16-bit depth
