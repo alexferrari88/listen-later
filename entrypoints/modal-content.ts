@@ -2,27 +2,39 @@
 // This content script is injected programmatically by the background script when needed
 
 import { logger } from "../lib/logger";
-import type { ProcessingJob, SpeechStylePrompt } from "../lib/storage";
-import { getExtensionOptions, substituteSpeechStyleTemplate } from "../lib/storage";
+import type { ProcessingJob } from "../lib/storage";
+import {
+	getExtensionOptions,
+	substituteSpeechStyleTemplate,
+} from "../lib/storage";
+
+type ModalOverlayElement = HTMLElement & { cleanup?: () => void };
 
 // Extend window object to include modal data
 declare global {
 	interface Window {
 		modalJobData?: ProcessingJob;
-		listenLaterModal?: HTMLElement;
+		listenLaterModal?: ModalOverlayElement;
+		listenLaterModalInitialized?: boolean;
 	}
 }
 
 export default defineContentScript({
 	matches: ["http://listen-later-extension.localhost/*"], // Non-conflicting pattern - only used for programmatic injection
 	main() {
+		if (window.listenLaterModalInitialized) {
+			logger.debug("Modal content script already initialized");
+			return;
+		}
+		window.listenLaterModalInitialized = true;
+
 		logger.info("Modal content script loaded");
 		logger.debug("Environment check:", {
 			hasJobData: !!window.modalJobData,
 		});
 
 		// Listen for messages from background script
-		chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+		chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 			logger.debug("Modal content script received message:", message.type);
 
 			if (message.type === "SHOW_TEXT_PREVIEW_MODAL") {
@@ -56,7 +68,7 @@ async function showTextPreviewModal(job: ProcessingJob) {
 	let selectedPromptId = options.defaultPromptId || "documentary";
 
 	// Create modal overlay
-	const overlay = document.createElement("div");
+	const overlay = document.createElement("div") as ModalOverlayElement;
 	overlay.id = "listen-later-modal-overlay";
 	overlay.style.cssText = `
 		position: fixed;
@@ -167,7 +179,7 @@ async function showTextPreviewModal(job: ProcessingJob) {
 	`;
 
 	// Add prompt options
-	availablePrompts.forEach(prompt => {
+	availablePrompts.forEach((prompt) => {
 		const option = document.createElement("option");
 		option.value = prompt.id;
 		option.textContent = `${prompt.name} - ${prompt.description}`;
@@ -184,7 +196,8 @@ async function showTextPreviewModal(job: ProcessingJob) {
 	`;
 
 	const previewLabel = document.createElement("div");
-	previewLabel.textContent = "Final text that will be sent for speech generation:";
+	previewLabel.textContent =
+		"Final text that will be sent for speech generation:";
 	previewLabel.style.cssText = `
 		font-size: 11px;
 		color: #666;
@@ -207,9 +220,14 @@ async function showTextPreviewModal(job: ProcessingJob) {
 
 	// Function to update preview text
 	const updatePreview = () => {
-		const currentPrompt = availablePrompts.find(p => p.id === selectedPromptId);
+		const currentPrompt = availablePrompts.find(
+			(p) => p.id === selectedPromptId,
+		);
 		if (currentPrompt && textarea.value) {
-			const finalText = substituteSpeechStyleTemplate(currentPrompt.template, textarea.value);
+			const finalText = substituteSpeechStyleTemplate(
+				currentPrompt.template,
+				textarea.value,
+			);
 			previewText.textContent = finalText;
 		} else {
 			previewText.textContent = textarea.value || "";
@@ -269,7 +287,7 @@ async function showTextPreviewModal(job: ProcessingJob) {
 	// Add event listeners
 	textarea.addEventListener("input", updateStats);
 	textarea.addEventListener("input", updatePreview);
-	
+
 	promptSelect.addEventListener("change", (e) => {
 		selectedPromptId = (e.target as HTMLSelectElement).value;
 		updatePreview();
@@ -409,7 +427,7 @@ async function showTextPreviewModal(job: ProcessingJob) {
 	document.addEventListener("keydown", handleKeydown);
 
 	// Store cleanup function on the overlay
-	(overlay as any).cleanup = () => {
+	overlay.cleanup = () => {
 		document.removeEventListener("keydown", handleKeydown);
 	};
 
@@ -425,18 +443,22 @@ async function showTextPreviewModal(job: ProcessingJob) {
 }
 
 function hideTextPreviewModal() {
-	const existingModal =
-		window.listenLaterModal ||
-		document.getElementById("listen-later-modal-overlay");
-	if (existingModal) {
+	const existingModalElement =
+		window.listenLaterModal ??
+		(document.getElementById(
+			"listen-later-modal-overlay",
+		) as ModalOverlayElement | null);
+	if (existingModalElement) {
 		logger.debug("Hiding text preview modal");
 
 		// Call cleanup function if it exists
-		if ((existingModal as any).cleanup) {
-			(existingModal as any).cleanup();
+		if (existingModalElement.cleanup) {
+			existingModalElement.cleanup();
 		}
 
-		existingModal.remove();
-		window.listenLaterModal = undefined;
+		existingModalElement.remove();
+		if (window.listenLaterModal === existingModalElement) {
+			window.listenLaterModal = undefined;
+		}
 	}
 }

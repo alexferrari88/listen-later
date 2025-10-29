@@ -413,7 +413,7 @@ const handleContentExtracted = withAsyncLogging(
 			jobId,
 			textLength: text.length,
 			articleTitle,
-			preview: text.substring(0, 100) + "...",
+			preview: `${text.substring(0, 100)}...`,
 		});
 
 		// Get the job and update it with extracted text
@@ -436,12 +436,8 @@ const handleContentExtracted = withAsyncLogging(
 		// Update badge to reflect new processing job
 		await updateExtensionBadge();
 
-		try {
-			await generateSpeechWithTimeout(jobId);
-			sendResponse({ success: true });
-		} catch (error) {
-			throw error;
-		}
+		await generateSpeechWithTimeout(jobId);
+		sendResponse({ success: true });
 	},
 	"handleContentExtracted",
 );
@@ -457,7 +453,7 @@ const handleContentExtractedForReview = withAsyncLogging(
 			jobId,
 			textLength: text.length,
 			articleTitle,
-			preview: text.substring(0, 100) + "...",
+			preview: `${text.substring(0, 100)}...`,
 		});
 
 		// Get the job and update it with extracted text
@@ -527,7 +523,7 @@ const handleModalConfirmed = withAsyncLogging(
 			jobId,
 			textLength: userText.length,
 			selectedPromptId,
-			preview: userText.substring(0, 100) + "...",
+			preview: `${userText.substring(0, 100)}...`,
 		});
 
 		// Get the job and update it with user-confirmed text
@@ -549,15 +545,25 @@ const handleModalConfirmed = withAsyncLogging(
 			},
 		});
 
+		// Ensure the in-page modal is dismissed even if the content script fails to close itself
+		if (typeof job.tabId === "number") {
+			try {
+				await chrome.tabs.sendMessage(job.tabId, {
+					type: "HIDE_TEXT_PREVIEW_MODAL",
+				});
+			} catch (error) {
+				logger.warn("Failed to send hide modal message after confirmation", {
+					jobId,
+					error,
+				});
+			}
+		}
+
 		// Update badge to reflect new processing job
 		await updateExtensionBadge();
 
-		try {
-			await generateSpeechWithTimeout(jobId);
-			sendResponse({ success: true });
-		} catch (error) {
-			throw error;
-		}
+		await generateSpeechWithTimeout(jobId);
+		sendResponse({ success: true });
 	},
 	"handleModalConfirmed",
 );
@@ -565,6 +571,18 @@ const handleModalConfirmed = withAsyncLogging(
 const handleModalCancelled = withAsyncLogging(
 	async (jobId: string, sendResponse: (response?: any) => void) => {
 		logger.debug("User cancelled text confirmation from modal", { jobId });
+
+		// Ask the content script to close the modal in case local cleanup failed
+		try {
+			const job = await getJob(jobId);
+			if (job?.tabId !== undefined) {
+				await chrome.tabs.sendMessage(job.tabId, {
+					type: "HIDE_TEXT_PREVIEW_MODAL",
+				});
+			}
+		} catch (error) {
+			logger.warn("Failed to hide modal after cancellation", { jobId, error });
+		}
 
 		// Remove job completely when cancelled
 		await removeJob(jobId);
