@@ -1,6 +1,7 @@
 // Import lamejs for MP3 encoding
 import * as lamejs from "@breezystack/lamejs";
 import { logger, withAsyncLogging } from "../lib/logger";
+import { createRateLimiter } from "../lib/rateLimiter";
 import { estimateTokenCount, splitTextIntoChunks } from "../lib/textChunker";
 
 // Browser-compatible base64 conversion helpers
@@ -48,6 +49,10 @@ import {
 	substituteSpeechStyleTemplate,
 	updateJob,
 } from "../lib/storage";
+
+const TTS_API_MAX_REQUESTS_PER_MINUTE = 10;
+const TTS_API_MAX_TOKENS_PER_MINUTE = 10_000;
+const TTS_API_TOKEN_OVERHEAD = 200;
 
 export default defineBackground(() => {
 	logger.info("Background script initialized");
@@ -759,49 +764,91 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 
 	const totalWordCount = getWordCount(job.text);
 	const totalTimeEstimate = getTimeEstimateLabel(totalWordCount);
-	const audioChunks: string[] = [];
+	const rateLimiter = createRateLimiter({
+		maxRequestsPerMinute: TTS_API_MAX_REQUESTS_PER_MINUTE,
+		maxTokensPerMinute: TTS_API_MAX_TOKENS_PER_MINUTE,
+	});
 
-	for (let index = 0; index < chunkCount; index++) {
-		const rawChunk = textChunks[index];
-		const chunkPromptText = substituteSpeechStyleTemplate(promptTemplate, rawChunk);
-		const chunkWordCount = getWordCount(rawChunk);
-		const chunkLabel = chunkCount === 1
-			? `AI is generating speech (~${totalWordCount} words, estimated ${totalTimeEstimate})...`
-			: `Generating speech chunk ${index + 1}/${chunkCount} (~${chunkWordCount} words, est. ${getTimeEstimateLabel(chunkWordCount)})...`;
+	let completedChunks = 0;
 
-		const chunkProgressStart = 10 + Math.floor((index / chunkCount) * 60);
-		const chunkProgressEnd = 10 + Math.floor(((index + 1) / chunkCount) * 60);
-
-		await updateJob(jobId, {
-			message: chunkLabel,
-			progress: chunkProgressStart,
-		});
-
-		const audioData = await fetchSpeechChunk({
-			apiKey: options.apiKey,
-			chunkCount,
-			chunkIndex: index,
-			chunkTextLength: chunkPromptText.length,
-			chunkWordCount,
-			endpoint,
-			jobId,
-			modelName: options.modelName,
-			requestBody: buildGeminiRequestBody(chunkPromptText, options.voice),
-			selectedPromptId,
-			promptName: selectedPrompt?.name,
-			voice: options.voice,
-		});
-
-		audioChunks.push(audioData);
-
-		await updateJob(jobId, {
-			message:
+	const chunkResults = await Promise.all(
+		textChunks.map(async (rawChunk, index) => {
+			const chunkPromptText = substituteSpeechStyleTemplate(
+				promptTemplate,
+				rawChunk,
+			);
+			const chunkWordCount = getWordCount(rawChunk);
+			const chunkLabel =
 				chunkCount === 1
-					? "Speech chunk generated successfully."
-					: `Chunk ${index + 1}/${chunkCount} generated.`,
-			progress: chunkProgressEnd,
-		});
-	}
+					? `AI is generating speech (~${totalWordCount} words, estimated ${totalTimeEstimate})...`
+					: `Generating speech chunk ${index + 1}/${chunkCount} (~${chunkWordCount} words, est. ${getTimeEstimateLabel(chunkWordCount)})...`;
+			const chunkTokenEstimate = Math.max(
+				1,
+				estimateTokenCount(chunkPromptText) + TTS_API_TOKEN_OVERHEAD,
+			);
+			const requestBody = buildGeminiRequestBody(chunkPromptText, options.voice);
+
+			await updateJob(jobId, {
+				message: chunkLabel,
+			});
+
+			let throttleNotified = false;
+			const audioData = await rateLimiter.schedule(
+				() =>
+					fetchSpeechChunk({
+						apiKey: options.apiKey,
+						chunkCount,
+						chunkIndex: index,
+						chunkTextLength: chunkPromptText.length,
+						chunkWordCount,
+						endpoint,
+						jobId,
+						modelName: options.modelName,
+						requestBody,
+						selectedPromptId,
+						promptName: selectedPrompt?.name,
+						voice: options.voice,
+					}),
+				chunkTokenEstimate,
+				{
+					onThrottle: async (waitMs) => {
+						if (throttleNotified) {
+							return;
+						}
+						throttleNotified = true;
+						const waitSeconds = Math.ceil(waitMs / 1000);
+						const throttleLabel =
+							chunkCount === 1
+								? "generating speech"
+								: `chunk ${index + 1}/${chunkCount}`;
+						await updateJob(jobId, {
+							message: `Waiting ~${waitSeconds}s before ${throttleLabel} to respect TTS API limits...`,
+						});
+					},
+				},
+			);
+
+			completedChunks += 1;
+			const chunkProgress = 10 + Math.floor((completedChunks / chunkCount) * 60);
+
+			await updateJob(jobId, {
+				message:
+					chunkCount === 1
+						? "Speech chunk generated successfully."
+						: `Chunk ${index + 1}/${chunkCount} generated (${completedChunks}/${chunkCount} ready).`,
+				progress: chunkProgress,
+			});
+
+			return {
+				index,
+				audioData,
+			};
+		}),
+	);
+
+	const audioChunks = chunkResults
+		.sort((a, b) => a.index - b.index)
+		.map((result) => result.audioData);
 
 	// Update progress after receiving API responses
 	await updateJob(jobId, {
