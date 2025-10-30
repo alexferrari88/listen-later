@@ -789,6 +789,39 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 
 	let completedChunks = 0;
 
+	const getParallelStartMessage = (): string => {
+		if (chunkCount === 1) {
+			return `Generating speech (~${totalWordCount} words, estimated ${totalTimeEstimate})...`;
+		}
+		return `Generating speech in parallel (${chunkCount} audio parts, ~${totalWordCount} words total). We'll check them off as they finish.`;
+	};
+
+	const getParallelProgressMessage = (readyChunks: number): string => {
+		if (chunkCount === 1) {
+			return "Speech chunk generated successfully.";
+		}
+		const remaining = Math.max(chunkCount - readyChunks, 0);
+		if (readyChunks === 0) {
+			return `Generating speech in parallel (${chunkCount} audio parts in flight)...`;
+		}
+		return `Generating speech in parallel (${readyChunks}/${chunkCount} audio parts ready, ${remaining} still working)...`;
+	};
+
+	const getParallelThrottleMessage = (
+		waitSeconds: number,
+		readyChunks: number,
+	): string => {
+		if (chunkCount === 1) {
+			return `Pausing ~${waitSeconds}s before continuing the speech request...`;
+		}
+		return `Pausing ~${waitSeconds}s before continuing speech requests (${readyChunks}/${chunkCount} audio parts ready)...`;
+	};
+
+	await updateJob(jobId, {
+		message: getParallelStartMessage(),
+		progress: 12,
+	});
+
 	const chunkResults = await Promise.all(
 		textChunks.map(async (rawChunk, index) => {
 			const chunkPromptText = substituteSpeechStyleTemplate(
@@ -796,19 +829,11 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 				rawChunk,
 			);
 			const chunkWordCount = getWordCount(rawChunk);
-			const chunkLabel =
-				chunkCount === 1
-					? `AI is generating speech (~${totalWordCount} words, estimated ${totalTimeEstimate})...`
-					: `Generating speech chunk ${index + 1}/${chunkCount} (~${chunkWordCount} words, est. ${getTimeEstimateLabel(chunkWordCount)})...`;
 			const chunkTokenEstimate = Math.max(
 				1,
 				estimateTokenCount(chunkPromptText) + TTS_API_TOKEN_OVERHEAD,
 			);
 			const requestBody = buildGeminiRequestBody(chunkPromptText, options.voice);
-
-			await updateJob(jobId, {
-				message: chunkLabel,
-			});
 
 			let throttleNotified = false;
 			const audioData = await rateLimiter.schedule(
@@ -835,12 +860,8 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 						}
 						throttleNotified = true;
 						const waitSeconds = Math.ceil(waitMs / 1000);
-						const throttleLabel =
-							chunkCount === 1
-								? "generating speech"
-								: `chunk ${index + 1}/${chunkCount}`;
 						await updateJob(jobId, {
-							message: `Waiting ~${waitSeconds}s before ${throttleLabel} to respect TTS API limits...`,
+							message: getParallelThrottleMessage(waitSeconds, completedChunks),
 						});
 					},
 				},
@@ -850,10 +871,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 			const chunkProgress = 10 + Math.floor((completedChunks / chunkCount) * 60);
 
 			await updateJob(jobId, {
-				message:
-					chunkCount === 1
-						? "Speech chunk generated successfully."
-						: `Chunk ${index + 1}/${chunkCount} generated (${completedChunks}/${chunkCount} ready).`,
+				message: getParallelProgressMessage(completedChunks),
 				progress: chunkProgress,
 			});
 
