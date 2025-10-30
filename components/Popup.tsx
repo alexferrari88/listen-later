@@ -244,13 +244,13 @@ const Popup: React.FC = () => {
 	): { emoji: string; text: string; color: string } => {
 		switch (job.status) {
 			case "processing":
-				return { emoji: "⏳", text: "Processing", color: "#4285f4" };
+				return { emoji: "⏳", text: "Processing", color: COLORS.primary };
 			case "success":
-				return { emoji: "✅", text: "Completed", color: "#137333" };
+				return { emoji: "✅", text: "Completed", color: COLORS.success };
 			case "error":
-				return { emoji: "❌", text: "Failed", color: "#d93025" };
+				return { emoji: "❌", text: "Failed", color: COLORS.error };
 			default:
-				return { emoji: "⏳", text: "Processing", color: "#4285f4" };
+				return { emoji: "⏳", text: "Processing", color: COLORS.primary };
 		}
 	};
 
@@ -487,10 +487,12 @@ const Popup: React.FC = () => {
 		return (
 			<div style={containerStyle}>
 				<div style={headerStyle}>
-					<h2 style={titleStyle}>Listen Later</h2>
+					<h2 style={titleStyle}>🎧 Listen Later</h2>
 				</div>
 				<div style={contentStyle}>
-					<p>Loading...</p>
+					<p style={{ ...TYPOGRAPHY.body, color: COLORS.textSecondary }}>
+						Loading...
+					</p>
 				</div>
 			</div>
 		);
@@ -501,16 +503,30 @@ const Popup: React.FC = () => {
 		return (
 			<div style={containerStyle}>
 				<div style={headerStyle}>
-					<h2 style={titleStyle}>Listen Later</h2>
+					<h2 style={titleStyle}>🎧 Listen Later</h2>
 				</div>
 				<div style={contentStyle}>
 					<div style={warningStyle}>
-						<p style={{ margin: "0 0 15px 0" }}>⚠️ Configuration required</p>
-						<p style={{ margin: "0 0 20px 0", fontSize: "14px" }}>
+						<p
+							style={{
+								margin: `0 0 ${SPACING.m} 0`,
+								...TYPOGRAPHY.subtitle,
+								color: COLORS.text,
+							}}
+						>
+							⚠️ Configuration Required
+						</p>
+						<p
+							style={{
+								margin: `0 0 ${SPACING.l} 0`,
+								...TYPOGRAPHY.body,
+								color: COLORS.textSecondary,
+							}}
+						>
 							Please configure your Gemini API key in the options page.
 						</p>
 						<button onClick={openOptionsPage} style={primaryButtonStyle}>
-							Open Settings
+							⚙️ Open Settings
 						</button>
 					</div>
 				</div>
@@ -532,23 +548,36 @@ const Popup: React.FC = () => {
 		<div style={containerStyle}>
 			<div style={headerStyle}>
 				<h2 style={titleStyle}>
-					Listen Later
-					{allJobs.some(isActiveJob) && (
-						<span style={activityDotStyle}>●</span>
-					)}
+					🎧 Listen Later
 				</h2>
-				{allJobs.length > 0 && (
-					<div
+				<div style={{ display: "flex", alignItems: "center", gap: SPACING.s }}>
+					{allJobs.length > 0 && allJobs.some(isActiveJob) && (
+						<div
+							style={{
+								...headerBadgeStyle,
+								animation: "breathe 2s infinite ease-in-out",
+							}}
+						>
+							<span style={{ fontSize: "8px" }}>●</span>
+							{allJobs.filter(isActiveJob).length} active
+						</div>
+					)}
+					<button
+						onClick={openOptionsPage}
 						style={{
-							...headerBadgeStyle,
-							...(allJobs.some(isActiveJob)
-								? { animation: "breathe 2s infinite ease-in-out" }
-								: {}),
+							background: "none",
+							border: "none",
+							cursor: "pointer",
+							fontSize: "20px",
+							padding: SPACING.xs,
+							opacity: 0.7,
+							transition: "opacity 0.2s ease",
 						}}
+						title="Settings"
 					>
-						{allJobs.filter(isActiveJob).length} active
-					</div>
-				)}
+						⚙️
+					</button>
+				</div>
 			</div>
 			<div style={contentStyle}>
 				{/* Current Tab Status */}
@@ -564,12 +593,16 @@ const Popup: React.FC = () => {
 				) : (
 					<div style={idleSectionStyle}>
 						<p
-							style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#666" }}
+							style={{
+								margin: `0 0 ${SPACING.l} 0`,
+								...TYPOGRAPHY.body,
+								color: COLORS.textSecondary,
+							}}
 						>
 							Convert the current page to speech
 						</p>
 						<button onClick={handleGenerateClick} style={primaryButtonStyle}>
-							Generate Speech
+							🎙️ Generate Speech
 						</button>
 					</div>
 				)}
@@ -606,74 +639,111 @@ const Popup: React.FC = () => {
 				)}
 
 				{/* Action Buttons */}
-				<div style={actionButtonsStyle}>
-					{!hasCurrentTabJob && (
-						<button onClick={openOptionsPage} style={secondaryButtonStyle}>
-							Settings
-						</button>
-					)}
-					{allJobs.length > 0 && (
-						<button onClick={handleClearAllJobs} style={clearAllButtonStyle}>
-							Clear All Jobs ({allJobs.length})
-						</button>
-					)}
-					{completedJobs.length > 0 && (
-						<button onClick={handleCleanupJobs} style={cleanupButtonStyle}>
-							Clear Completed ({completedJobs.length})
-						</button>
-					)}
-				</div>
+				{(allJobs.length > 0 || !hasCurrentTabJob) && (
+					<div style={actionButtonsStyle}>
+						{!hasCurrentTabJob && (
+							<button onClick={openOptionsPage} style={secondaryButtonStyle}>
+								📋 Settings
+							</button>
+						)}
+						{completedJobs.length > 0 && (
+							<button onClick={handleCleanupJobs} style={cleanupButtonStyle}>
+								Clear Completed ({completedJobs.length})
+							</button>
+						)}
+						{allJobs.length > 0 && (
+							<button onClick={handleClearAllJobs} style={clearAllButtonStyle}>
+								🗑️ Clear All ({allJobs.length})
+							</button>
+						)}
+					</div>
+				)}
 			</div>
 		</div>
 	);
 };
 
+// Design System Constants
+const SPACING = {
+	xs: "4px",
+	s: "8px",
+	m: "16px",
+	l: "24px",
+	xl: "32px",
+};
+
+const TYPOGRAPHY = {
+	title: { fontSize: "18px", fontWeight: "600" as const },
+	subtitle: { fontSize: "14px", fontWeight: "500" as const },
+	body: { fontSize: "13px", fontWeight: "400" as const },
+	caption: { fontSize: "11px", fontWeight: "400" as const },
+	tiny: { fontSize: "10px", fontWeight: "400" as const },
+};
+
+const COLORS = {
+	primary: "#4285f4",
+	success: "#34A853",
+	error: "#EA4335",
+	warning: "#FBBC04",
+	text: "#202124",
+	textSecondary: "#5F6368",
+	border: "#DADCE0",
+	background: "#FFFFFF",
+	backgroundSecondary: "#F8F9FA",
+};
+
 // Styles
 const containerStyle: React.CSSProperties = {
-	width: "350px",
+	width: "420px",
 	minHeight: "200px",
-	fontFamily: "Arial, sans-serif",
+	fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
 };
 
 const headerStyle: React.CSSProperties = {
-	padding: "15px 20px 10px 20px",
-	borderBottom: "1px solid #e0e0e0",
-	backgroundColor: "#f8f9fa",
+	padding: "16px 24px",
+	borderBottom: `1px solid ${COLORS.border}`,
+	backgroundColor: COLORS.backgroundSecondary,
+	display: "flex",
+	justifyContent: "space-between",
+	alignItems: "center",
 };
 
 const titleStyle: React.CSSProperties = {
 	margin: 0,
-	fontSize: "18px",
-	color: "#333",
+	...TYPOGRAPHY.title,
+	color: COLORS.text,
+	display: "flex",
+	alignItems: "center",
+	gap: SPACING.s,
 };
 
 const contentStyle: React.CSSProperties = {
-	padding: "20px",
+	padding: SPACING.l,
 };
 
 const primaryButtonStyle: React.CSSProperties = {
-	padding: "10px 16px",
-	backgroundColor: "#4285f4",
+	padding: "12px 24px",
+	backgroundColor: COLORS.primary,
 	color: "white",
 	border: "none",
-	borderRadius: "4px",
-	fontSize: "14px",
+	borderRadius: "8px",
+	...TYPOGRAPHY.subtitle,
 	cursor: "pointer",
-	fontWeight: "500",
-	minWidth: "120px",
+	width: "100%",
+	transition: "all 0.2s ease",
+	boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
-	padding: "10px 16px",
+	padding: "10px 20px",
 	backgroundColor: "transparent",
-	color: "#4285f4",
-	border: "1px solid #4285f4",
-	borderRadius: "4px",
-	fontSize: "14px",
+	color: COLORS.textSecondary,
+	border: `1px solid ${COLORS.border}`,
+	borderRadius: "6px",
+	...TYPOGRAPHY.body,
 	cursor: "pointer",
-	fontWeight: "500",
-	minWidth: "120px",
-	alignSelf: "center",
+	flex: 1,
+	transition: "all 0.2s ease",
 };
 
 const errorStyle: React.CSSProperties = {
@@ -693,7 +763,10 @@ const processingStyle: React.CSSProperties = {
 
 const warningStyle: React.CSSProperties = {
 	textAlign: "center",
-	color: "#ea8600",
+	padding: SPACING.l,
+	backgroundColor: "#FFF9E6",
+	border: `2px solid ${COLORS.warning}`,
+	borderRadius: "12px",
 };
 
 const spinnerStyle: React.CSSProperties = {
@@ -818,28 +891,34 @@ const stageLabelTextStyle: React.CSSProperties = {
 
 // New job-based styles
 const headerBadgeStyle: React.CSSProperties = {
-	backgroundColor: "#4285f4",
+	backgroundColor: COLORS.success,
 	color: "white",
-	fontSize: "12px",
-	padding: "2px 8px",
+	...TYPOGRAPHY.caption,
+	fontWeight: "600" as const,
+	padding: "4px 12px",
 	borderRadius: "12px",
-	fontWeight: "500",
+	display: "flex",
+	alignItems: "center",
+	gap: SPACING.xs,
 };
 
 const currentTabSectionStyle: React.CSSProperties = {
-	marginBottom: "15px",
+	marginBottom: SPACING.m,
 };
 
 const sectionTitleStyle: React.CSSProperties = {
-	margin: "0 0 10px 0",
-	fontSize: "14px",
-	fontWeight: "600",
-	color: "#333",
+	margin: `0 0 ${SPACING.m} 0`,
+	...TYPOGRAPHY.subtitle,
+	fontWeight: "700" as const,
+	color: COLORS.text,
+	textTransform: "uppercase" as const,
+	letterSpacing: "0.5px",
+	fontSize: "11px",
 };
 
 const idleSectionStyle: React.CSSProperties = {
 	textAlign: "center",
-	marginBottom: "15px",
+	marginBottom: SPACING.m,
 };
 
 const otherJobsSectionStyle: React.CSSProperties = {
@@ -848,17 +927,18 @@ const otherJobsSectionStyle: React.CSSProperties = {
 
 const collapsibleButtonStyle: React.CSSProperties = {
 	width: "100%",
-	padding: "10px 12px",
-	backgroundColor: "#f8f9fa",
-	border: "1px solid #e0e0e0",
-	borderRadius: "6px",
-	fontSize: "14px",
+	padding: "12px 16px",
+	backgroundColor: COLORS.backgroundSecondary,
+	border: `1px solid ${COLORS.border}`,
+	borderRadius: "8px",
+	...TYPOGRAPHY.body,
+	fontWeight: "500" as const,
 	cursor: "pointer",
 	display: "flex",
 	justifyContent: "space-between",
 	alignItems: "center",
-	fontWeight: "500",
-	color: "#333",
+	color: COLORS.text,
+	transition: "all 0.2s ease",
 };
 
 const otherJobsListStyle: React.CSSProperties = {
@@ -870,44 +950,51 @@ const otherJobsListStyle: React.CSSProperties = {
 
 const actionButtonsStyle: React.CSSProperties = {
 	display: "flex",
-	flexDirection: "column",
-	gap: "10px",
-	marginTop: "15px",
+	gap: SPACING.m,
+	marginTop: SPACING.l,
+	paddingTop: SPACING.l,
+	borderTop: `1px solid ${COLORS.border}`,
 };
 
 const cleanupButtonStyle: React.CSSProperties = {
-	padding: "8px 12px",
-	backgroundColor: "#f8f9fa",
-	color: "#666",
-	border: "1px solid #e0e0e0",
-	borderRadius: "4px",
-	fontSize: "12px",
+	padding: "10px 20px",
+	backgroundColor: COLORS.backgroundSecondary,
+	color: COLORS.textSecondary,
+	border: `1px solid ${COLORS.border}`,
+	borderRadius: "6px",
+	...TYPOGRAPHY.body,
 	cursor: "pointer",
-	fontWeight: "400",
+	flex: 1,
+	transition: "all 0.2s ease",
 };
 
 const clearAllButtonStyle: React.CSSProperties = {
-	padding: "8px 12px",
-	backgroundColor: "#d93025",
+	padding: "10px 20px",
+	backgroundColor: COLORS.error,
 	color: "white",
 	border: "none",
-	borderRadius: "4px",
-	fontSize: "12px",
+	borderRadius: "6px",
+	...TYPOGRAPHY.body,
 	cursor: "pointer",
-	fontWeight: "500",
+	flex: 1,
+	transition: "all 0.2s ease",
+	boxShadow: "0 1px 3px rgba(234, 67, 53, 0.3)",
 };
 
 // Job Card Styles
 const jobCardStyle: React.CSSProperties = {
-	padding: "12px",
-	border: "1px solid #e0e0e0",
-	borderRadius: "8px",
-	backgroundColor: "#ffffff",
+	padding: SPACING.m,
+	border: `2px solid ${COLORS.border}`,
+	borderRadius: "12px",
+	backgroundColor: COLORS.background,
+	boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
+	transition: "all 0.2s ease",
 };
 
 const currentTabJobStyle: React.CSSProperties = {
-	border: "2px solid #4285f4",
-	backgroundColor: "#f8fbff",
+	border: `3px solid ${COLORS.primary}`,
+	backgroundColor: "#F8FBFF",
+	boxShadow: "0 2px 8px rgba(66, 133, 244, 0.15)",
 };
 
 const jobHeaderStyle: React.CSSProperties = {
@@ -957,84 +1044,87 @@ const jobMessageStyle: React.CSSProperties = {
 const progressContainerStyle: React.CSSProperties = {
 	display: "flex",
 	alignItems: "center",
-	gap: "8px",
-	marginBottom: "8px",
+	gap: SPACING.s,
+	marginBottom: SPACING.s,
 };
 
 const progressBarStyle: React.CSSProperties = {
 	flex: 1,
-	height: "6px",
-	backgroundColor: "#e0e0e0",
-	borderRadius: "3px",
+	height: "8px",
+	backgroundColor: COLORS.border,
+	borderRadius: "4px",
 	overflow: "hidden",
 };
 
 const progressFillStyle: React.CSSProperties = {
 	height: "100%",
-	backgroundColor: "#4285f4",
-	borderRadius: "3px",
+	backgroundColor: COLORS.primary,
+	borderRadius: "4px",
 	transition: "width 0.3s ease",
 };
 
 const progressTextStyle: React.CSSProperties = {
-	fontSize: "11px",
-	color: "#666",
-	fontWeight: "500",
-	minWidth: "35px",
+	...TYPOGRAPHY.caption,
+	fontWeight: "600" as const,
+	color: COLORS.primary,
+	minWidth: "40px",
 	textAlign: "right" as const,
 };
 
 const jobErrorStyle: React.CSSProperties = {
-	fontSize: "12px",
-	color: "#d93025",
-	marginBottom: "8px",
-	fontWeight: "400",
+	...TYPOGRAPHY.body,
+	color: COLORS.error,
+	marginBottom: SPACING.s,
+	fontWeight: "500" as const,
 };
 
 const jobSuccessStyle: React.CSSProperties = {
-	fontSize: "12px",
-	color: "#137333",
-	marginBottom: "8px",
-	fontWeight: "400",
+	...TYPOGRAPHY.body,
+	color: COLORS.success,
+	marginBottom: SPACING.s,
+	fontWeight: "500" as const,
 };
 
 const jobActionsStyle: React.CSSProperties = {
 	display: "flex",
-	gap: "8px",
+	gap: SPACING.s,
 	justifyContent: "flex-end",
+	marginTop: SPACING.s,
 };
 
 const jobActionButtonStyle: React.CSSProperties = {
-	padding: "4px 8px",
-	backgroundColor: "#4285f4",
+	padding: "6px 12px",
+	backgroundColor: COLORS.primary,
 	color: "white",
 	border: "none",
-	borderRadius: "4px",
-	fontSize: "12px",
+	borderRadius: "6px",
+	...TYPOGRAPHY.caption,
+	fontWeight: "600" as const,
 	cursor: "pointer",
-	fontWeight: "500",
+	transition: "all 0.2s ease",
 };
 
 const jobRemoveButtonStyle: React.CSSProperties = {
-	padding: "4px 8px",
+	padding: "6px 12px",
 	backgroundColor: "transparent",
-	color: "#666",
-	border: "1px solid #ccc",
-	borderRadius: "4px",
-	fontSize: "12px",
+	color: COLORS.textSecondary,
+	border: `1px solid ${COLORS.border}`,
+	borderRadius: "6px",
+	...TYPOGRAPHY.caption,
 	cursor: "pointer",
-	fontWeight: "400",
+	transition: "all 0.2s ease",
 };
 
 const jobCancelButtonStyle: React.CSSProperties = {
-	padding: "4px 8px",
-	backgroundColor: "#ea8600",
-	color: "white",
+	padding: "6px 12px",
+	backgroundColor: COLORS.warning,
+	color: COLORS.text,
 	border: "none",
-	borderRadius: "4px",
-	fontSize: "12px",
+	borderRadius: "6px",
+	...TYPOGRAPHY.caption,
+	fontWeight: "600" as const,
 	cursor: "pointer",
-	fontWeight: "500",
+	transition: "all 0.2s ease",
 };
 
 // Enhanced animation styles for processing jobs
@@ -1049,31 +1139,31 @@ const processingJobCardStyle: React.CSSProperties = {
 
 // Stage indicator styles
 const stageEmojiStyle: React.CSSProperties = {
-	fontSize: "14px",
-	marginRight: "6px",
+	fontSize: "16px",
+	marginRight: SPACING.s,
 };
 
 const stageTitleStyle: React.CSSProperties = {
-	fontSize: "13px",
-	fontWeight: "600",
-	color: "#4285f4",
-	marginBottom: "6px",
+	...TYPOGRAPHY.body,
+	fontWeight: "600" as const,
+	color: COLORS.primary,
+	marginBottom: SPACING.s,
 };
 
 const stageProgressBarStyle: React.CSSProperties = {
 	width: "100%",
-	height: "4px",
-	backgroundColor: "#e0e0e0",
-	borderRadius: "2px",
+	height: "6px",
+	backgroundColor: COLORS.border,
+	borderRadius: "3px",
 	overflow: "hidden",
-	marginTop: "4px",
+	marginTop: SPACING.xs,
 };
 
 const stageProgressFillStyle: React.CSSProperties = {
 	height: "100%",
-	background: "linear-gradient(90deg, #4285f4 25%, #66a3ff 50%, #4285f4 75%)",
+	background: `linear-gradient(90deg, ${COLORS.primary} 25%, #66a3ff 50%, ${COLORS.primary} 75%)`,
 	backgroundSize: "200% 100%",
-	borderRadius: "2px",
+	borderRadius: "3px",
 	transition: "width 0.5s ease-out",
 	animation: "shimmer 2s infinite linear",
 };
@@ -1138,31 +1228,31 @@ const errorHelpStyle: React.CSSProperties = {
 
 const retryButtonStyle: React.CSSProperties = {
 	padding: "6px 12px",
-	backgroundColor: "#f59e0b",
-	color: "white",
+	backgroundColor: COLORS.warning,
+	color: COLORS.text,
 	border: "none",
-	borderRadius: "4px",
-	fontSize: "12px",
+	borderRadius: "6px",
+	...TYPOGRAPHY.caption,
+	fontWeight: "600" as const,
 	cursor: "pointer",
-	fontWeight: "600",
-	boxShadow: "0 1px 3px rgba(245, 158, 11, 0.3)",
+	boxShadow: "0 1px 3px rgba(251, 188, 4, 0.3)",
 	transition: "all 0.2s ease",
 };
 
 // Content awareness styles
 const contentInfoStyle: React.CSSProperties = {
-	fontSize: "11px",
-	color: "#666",
-	backgroundColor: "#f8f9fa",
-	padding: "6px 8px",
-	borderRadius: "4px",
-	marginBottom: "6px",
-	border: "1px solid #e0e0e0",
+	...TYPOGRAPHY.caption,
+	color: COLORS.textSecondary,
+	backgroundColor: COLORS.backgroundSecondary,
+	padding: `${SPACING.s} ${SPACING.m}`,
+	borderRadius: "6px",
+	marginBottom: SPACING.s,
+	border: `1px solid ${COLORS.border}`,
 };
 
 const timeEstimateStyle: React.CSSProperties = {
-	color: "#4285f4",
-	fontWeight: "500",
+	color: COLORS.primary,
+	fontWeight: "600" as const,
 };
 
 // Add CSS animations
