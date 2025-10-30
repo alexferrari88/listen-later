@@ -104,4 +104,56 @@ describe("SlidingWindowRateLimiter", () => {
 			limiter.schedule(async () => "too big", 200),
 		).rejects.toThrow(/exceeds the per-minute limit/i);
 	});
+
+	it("shares limits across concurrent consumers using the same limiter", async () => {
+		vi.useFakeTimers();
+		try {
+			const limiter = new SlidingWindowRateLimiter({
+				maxRequestsPerMinute: 10,
+				maxTokensPerMinute: 20,
+				windowMs: 1_000,
+				minWaitMs: 1,
+			});
+
+			const startTimesA: number[] = [];
+			const startTimesB: number[] = [];
+			const throttleSpy = vi.fn();
+
+			const jobAPromise = limiter.schedule(async () => {
+				startTimesA.push(Date.now());
+				return "job-a";
+			}, 15);
+
+			const jobBPromise = limiter.schedule(
+				async () => {
+					startTimesB.push(Date.now());
+					return "job-b";
+				},
+				15,
+				{
+					onThrottle: async (waitMs) => {
+						throttleSpy(waitMs);
+					},
+				},
+			);
+
+			await vi.advanceTimersByTimeAsync(0);
+			expect(startTimesA).toHaveLength(1);
+			expect(startTimesB).toHaveLength(0);
+			expect(throttleSpy).toHaveBeenCalledTimes(1);
+
+			await vi.advanceTimersByTimeAsync(1_000);
+			const [jobAResult, jobBResult] = await Promise.all([
+				jobAPromise,
+				jobBPromise,
+			]);
+
+			expect(jobAResult).toBe("job-a");
+			expect(jobBResult).toBe("job-b");
+			expect(startTimesB).toHaveLength(1);
+			expect(startTimesB[0]).toBeGreaterThanOrEqual(1_000);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });

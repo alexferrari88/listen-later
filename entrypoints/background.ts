@@ -54,6 +54,11 @@ const TTS_API_MAX_REQUESTS_PER_MINUTE = 10;
 const TTS_API_MAX_TOKENS_PER_MINUTE = 10_000;
 const TTS_API_TOKEN_OVERHEAD = 200;
 
+const ttsApiRateLimiter = createRateLimiter({
+	maxRequestsPerMinute: TTS_API_MAX_REQUESTS_PER_MINUTE,
+	maxTokensPerMinute: TTS_API_MAX_TOKENS_PER_MINUTE,
+});
+
 export default defineBackground(() => {
 	logger.info("Background script initialized");
 
@@ -782,10 +787,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 
 	const totalWordCount = getWordCount(job.text);
 	const totalTimeEstimate = getTimeEstimateLabel(totalWordCount);
-	const rateLimiter = createRateLimiter({
-		maxRequestsPerMinute: TTS_API_MAX_REQUESTS_PER_MINUTE,
-		maxTokensPerMinute: TTS_API_MAX_TOKENS_PER_MINUTE,
-	});
+	const rateLimiter = ttsApiRateLimiter;
 
 	let completedChunks = 0;
 
