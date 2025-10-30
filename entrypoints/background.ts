@@ -621,7 +621,7 @@ const handleJobCancellation = withAsyncLogging(
 		// Send cancellation notification
 		showNotification({
 			type: "basic",
-			iconUrl: chrome.runtime.getURL("icon/128.png"),
+			iconUrl: chrome.runtime.getURL("icons/128.png"),
 			title: "Listen Later - Cancelled",
 			message: `Audio generation cancelled: ${jobName}`,
 		});
@@ -685,7 +685,7 @@ const generateSpeechWithTimeout = withAsyncLogging(async (jobId: string) => {
 		// Send error notification
 		showNotification({
 			type: "basic",
-			iconUrl: chrome.runtime.getURL("icon/128.png"),
+			iconUrl: chrome.runtime.getURL("icons/128.png"),
 			title: "Listen Later - Error",
 			message: `Speech generation failed: ${errorMessage}`,
 		});
@@ -924,7 +924,7 @@ const generateSpeech = withAsyncLogging(async (jobId: string) => {
 	// Send success notification
 	showNotification({
 		type: "basic",
-		iconUrl: chrome.runtime.getURL("icon/128.png"),
+		iconUrl: chrome.runtime.getURL("icons/128.png"),
 		title: "Listen Later",
 		message: `Audio generated successfully: ${job.filename || "audio file"}`,
 	});
