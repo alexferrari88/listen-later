@@ -609,13 +609,10 @@ const handleJobCancellation = withAsyncLogging(
 		const jobName =
 			job?.tabInfo.articleTitle || job?.tabInfo.title || "audio file";
 
-		// Update job status
-		await updateJob(jobId, {
-			status: "error",
-			message: "Cancelled by user",
-		});
+		// Remove job completely when cancelled (consistent with modal cancellation)
+		await removeJob(jobId);
 
-		// Update badge since job is no longer active
+		// Update badge since job was removed
 		await updateExtensionBadge();
 
 		// Send cancellation notification
